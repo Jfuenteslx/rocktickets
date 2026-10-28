@@ -1,0 +1,37 @@
+{
+  "expo": {
+    "name": "Rocktickets Puerta",
+    "slug": "rocktickets-puerta",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.rocktickets.puerta"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#E6F4FE",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "package": "com.rocktickets.puerta"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "backgroundColor": "#0E1319",
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Rocktickets Puerta usa la cámara para leer el QR de las entradas.",
+          "recordAudioAndroid": false
+        }
+      ],
+      "expo-secure-store"
+    ]
+  }
+}
