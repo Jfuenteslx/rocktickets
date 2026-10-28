@@ -1,0 +1,53 @@
+@import "@fontsource/barlow-condensed/500.css";
+@import "@fontsource/barlow-condensed/600.css";
+@import "@fontsource/barlow-condensed/700.css";
+@import "@fontsource/ibm-plex-sans/400.css";
+@import "@fontsource/ibm-plex-sans/500.css";
+@import "@fontsource/ibm-plex-sans/600.css";
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html { color-scheme: dark; }
+  body {
+    @apply bg-bg text-ink font-sans antialiased;
+    font-feature-settings: "tnum" 1;
+  }
+  :focus-visible { outline: 2px solid #F0B93A; outline-offset: 2px; }
+  ::selection { background: #F0B93A; color: #1B1405; }
+}
+
+@layer components {
+  .field-label { @apply block text-sm font-medium text-ink mb-1.5; }
+  .field-hint { @apply mt-1.5 text-[13px] leading-snug text-muted; }
+  .field-error { @apply mt-1.5 text-[13px] leading-snug text-bad; }
+  .input {
+    @apply w-full rounded-md bg-bg border border-line px-3 py-2.5 text-[15px] text-ink placeholder:text-muted/70
+           transition-colors hover:border-[#3A4757] focus:border-lamp focus:outline-none;
+  }
+  .input:disabled { @apply opacity-60 cursor-not-allowed hover:border-line; }
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 rounded-md px-4 py-2.5 text-[15px] font-semibold
+           transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary { @apply bg-lamp text-lamp-ink hover:bg-[#F6C655] active:bg-lamp-dim; }
+  .btn-quiet { @apply bg-raised text-ink border border-line hover:border-[#3A4757] hover:bg-[#212C38]; }
+  .btn-ghost { @apply text-muted hover:text-ink; }
+
+  /* Talón del ticket: muesca superior e inferior sobre la línea perforada */
+  .stub-notch::before, .stub-notch::after {
+    content: ""; position: absolute; left: -9px; width: 18px; height: 18px; border-radius: 9999px;
+    background: #0E1319; border: 1px solid #2A3441; z-index: 1;
+  }
+  .stub-notch::before { top: -10px; clip-path: inset(50% 0 0 0); }
+  .stub-notch::after { bottom: -10px; clip-path: inset(0 0 50% 0); }
+}
+
+@keyframes fill { from { transform: scaleX(0); } to { transform: scaleX(1); } }
+.gauge-seg { transform-origin: left center; animation: fill 700ms cubic-bezier(.2,.7,.2,1) both; }
+@media (prefers-reduced-motion: reduce) {
+  .gauge-seg { animation: none; }
+  * { scroll-behavior: auto !important; transition-duration: 0.01ms !important; }
+}
