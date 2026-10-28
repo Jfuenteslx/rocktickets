@@ -1,0 +1,1 @@
+ALTER TABLE "access" ADD COLUMN "method" text DEFAULT 'QR' NOT NULL;

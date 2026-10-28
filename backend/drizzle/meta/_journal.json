@@ -1,0 +1,62 @@
+{
+  "version": "7",
+  "dialect": "postgresql",
+  "entries": [
+    {
+      "idx": 0,
+      "version": "7",
+      "when": 1790760871060,
+      "tag": "0000_vengeful_eddie_brock",
+      "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1790761056737,
+      "tag": "0001_military_vector",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1790761113189,
+      "tag": "0002_high_dagger",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1791394663789,
+      "tag": "0003_parte1_inventario_previo",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1791400124507,
+      "tag": "0004_parte1_organizadores",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1791809203511,
+      "tag": "0005_cortesias_enlace",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1791810527378,
+      "tag": "0006_puerta_asignaciones",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1791828661840,
+      "tag": "0007_puerta_acceso_manual",
+      "breakpoints": true
+    }
+  ]
+}
