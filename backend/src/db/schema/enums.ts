@@ -31,6 +31,8 @@ export const paymentStatusEnum = pgEnum('payment_status', [
   'ERROR',
   'CONFIRMADO_SIN_ORDEN',
   'REEMBOLSADO',
+  // El banco reportó un monto distinto al cobrado: no confirma la orden; lo revisa el superadmin
+  'NO_CONCILIADO',
 ]);
 
 // Tier: VENTA = se compra por la web; CORTESIA = entradas gratis que el ADMIN
@@ -59,4 +61,21 @@ export const accessResultEnum = pgEnum('access_result', [
   'ADMITIDO',
   'RECHAZADO_YA_USADO',
   'RECHAZADO_INVALIDO',
+]);
+
+// Plano del venue (creador de venues) ------------------------------------------------
+// Tipo de sector: cómo se ocupa físicamente. En la fase 1 es solo informativo; en la
+// fase 2 decide qué generador (mesas / filas de butacas) se usa para dibujarlo.
+export const sectorTypeEnum = pgEnum('sector_type', ['MESAS', 'BUTACAS', 'DE_PIE', 'MIXTO']);
+
+// Vista desde el sector hacia el escenario
+export const sectorViewEnum = pgEnum('sector_view', ['LIBRE', 'OBSTRUIDA', 'PRIVILEGIADA']);
+
+// Elementos de referencia del plano: orientan al comprador, no se venden ni tienen aforo
+export const venueElementKindEnum = pgEnum('venue_element_kind', [
+  'ESCENARIO',
+  'BARRA',
+  'BANOS',
+  'SALIDA_EMERGENCIA',
+  'OTRO',
 ]);

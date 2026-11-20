@@ -37,9 +37,13 @@ export async function generateTicketsForEvent(db: Database, eventId: string): Pr
     if (!ev) throw new NotFoundException('Evento no encontrado');
     if (ev.status !== 'ACTIVO') throw new BadRequestException('El evento está cancelado');
 
-    const sectors = await tx.select().from(sector).where(eq(sector.venueId, ev.venueId));
+    // Los sectores no vendibles (baños, barra, zonas de servicio) quedan fuera del aforo y de los eventos
+    const sectors = await tx
+      .select()
+      .from(sector)
+      .where(and(eq(sector.venueId, ev.venueId), eq(sector.sellable, true)));
     if (sectors.length === 0) {
-      throw new BadRequestException('El venue no tiene sectores: créalos primero');
+      throw new BadRequestException('El venue no tiene sectores vendibles: créalos primero');
     }
 
     const existing = await tx

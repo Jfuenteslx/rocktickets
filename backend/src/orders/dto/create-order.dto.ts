@@ -1,4 +1,4 @@
-import { ArrayMinSize, IsArray, IsEmail, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMinSize, IsArray, Equals, IsEmail, IsString, IsUUID, MinLength, ValidateNested } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderItemDto } from './order-item.dto.js';
 
@@ -16,6 +16,10 @@ export class CreateOrderDto {
   @IsString()
   @MinLength(6)
   buyerPhone!: string;
+
+  // Casilla obligatoria de términos y privacidad: solo vale `true`
+  @Equals(true, { message: 'Debes aceptar los términos y la política de privacidad' })
+  acceptTerms!: true;
 
   @IsArray()
   @ArrayMinSize(1)

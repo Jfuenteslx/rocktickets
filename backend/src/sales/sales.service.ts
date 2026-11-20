@@ -2,7 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { and, desc, eq, inArray, sql, type SQL } from 'drizzle-orm';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
-import { event, order, orderItem, organizer, payment, sector, ticket, tier, venue } from '../db/index.js';
+import { event, order, orderItem, organizer, payment, paymentEvent, sector, ticket, tier, venue } from '../db/index.js';
 import { canManageOrganizer, type AuthUser } from '../auth/access.js';
 
 export const ORDER_STATUSES = ['PAGADA', 'PENDIENTE_PAGO', 'EXPIRADA'] as const;
@@ -21,6 +21,11 @@ const money = (v: unknown) => (v === null || v === undefined ? '0.00' : String(v
 // Criterio de venta: una orden PAGADA. Las pendientes se muestran aparte ("en espera"); las
 // expiradas no cuentan. Las cortesías no pasan por órdenes: no son ingreso.
 const PAID = sql`${order.status} = 'PAGADA'`;
+
+// Pagos que necesitan una mirada humana (superadmin): estados del cobro y avisos del proveedor
+// que no pudieron aplicarse (pago adicional sobre un cobro ya resuelto, referencia desconocida).
+const REVIEW_PAYMENT_STATUSES = ['CONFIRMADO_SIN_ORDEN', 'ERROR', 'NO_CONCILIADO'] as const;
+const REVIEW_EVENT_KINDS = ['DUPLICADO', 'REFERENCIA_DESCONOCIDA'];
 const lineTotal = sql`${orderItem.quantity} * ${orderItem.unitPrice}`;
 
 export interface SummaryRow {
@@ -122,8 +127,12 @@ export class SalesService {
       const [r] = await this.db
         .select({ n: sql<number>`count(*)::int` })
         .from(payment)
-        .where(inArray(payment.status, ['CONFIRMADO_SIN_ORDEN', 'ERROR']));
-      reviewCount = r?.n ?? 0;
+        .where(inArray(payment.status, [...REVIEW_PAYMENT_STATUSES]));
+      const [e] = await this.db
+        .select({ n: sql<number>`count(*)::int` })
+        .from(paymentEvent)
+        .where(inArray(paymentEvent.kind, REVIEW_EVENT_KINDS));
+      reviewCount = (r?.n ?? 0) + (e?.n ?? 0);
     }
     return { events: out, totals, reviewCount };
   }
@@ -347,9 +356,52 @@ export class SalesService {
       .innerJoin(order, eq(order.id, payment.orderId))
       .innerJoin(event, eq(event.id, order.eventId))
       .innerJoin(organizer, eq(organizer.id, event.organizerId))
-      .where(inArray(payment.status, ['CONFIRMADO_SIN_ORDEN', 'ERROR']))
+      .where(inArray(payment.status, [...REVIEW_PAYMENT_STATUSES]))
       .orderBy(desc(payment.createdAt))
       .limit(200);
-    return rows.map((r) => ({ ...r, ref: this.ref(r.orderId), amount: money(r.amount) }));
+
+    // Avisos del proveedor que no se pudieron aplicar. La referencia es el id de la orden (texto):
+    // puede no corresponder a ninguna orden nuestra, por eso los joins son LEFT.
+    const eventRows = await this.db
+      .select({
+        id: paymentEvent.id,
+        status: paymentEvent.kind,
+        amount: paymentEvent.amount,
+        providerPaymentId: paymentEvent.providerTxId,
+        createdAt: paymentEvent.createdAt,
+        reference: paymentEvent.reference,
+        orderId: order.id,
+        orderStatus: order.status,
+        buyerName: order.buyerName,
+        buyerEmail: order.buyerEmail,
+        buyerPhone: order.buyerPhone,
+        eventId: event.id,
+        eventName: event.name,
+        organizerName: organizer.name,
+      })
+      .from(paymentEvent)
+      .leftJoin(order, sql`${order.id}::text = ${paymentEvent.reference}`)
+      .leftJoin(event, eq(event.id, order.eventId))
+      .leftJoin(organizer, eq(organizer.id, event.organizerId))
+      .where(inArray(paymentEvent.kind, REVIEW_EVENT_KINDS))
+      .orderBy(desc(paymentEvent.createdAt))
+      .limit(200);
+
+    const fromPayments = rows.map((r) => ({ ...r, ref: this.ref(r.orderId), amount: money(r.amount) }));
+    const fromEvents = eventRows.map((r) => ({
+      ...r,
+      currency: 'BOB',
+      provider: 'PAGOSYA',
+      ref: this.ref(r.orderId ?? r.reference),
+      amount: money(r.amount),
+      buyerName: r.buyerName ?? 'Referencia desconocida',
+      buyerEmail: r.buyerEmail ?? '',
+      buyerPhone: r.buyerPhone ?? '',
+      eventName: r.eventName ?? '—',
+      organizerName: r.organizerName ?? '—',
+    }));
+    return [...fromPayments, ...fromEvents]
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
+      .slice(0, 200);
   }
 }

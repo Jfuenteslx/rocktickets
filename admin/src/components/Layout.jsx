@@ -1,4 +1,4 @@
-import { NavLink, Outlet } from "react-router-dom";
+import { NavLink, Outlet, useMatch } from "react-router-dom";
 import Logo from "./Logo.jsx";
 import { useAuth } from "../lib/auth.jsx";
 
@@ -9,11 +9,14 @@ export default function Layout() {
     ? [["/eventos", "Eventos"], ["/ventas", "Ventas"], ["/organizadores", "Organizadores"], ["/personal", "Personal"], ["/locales", "Locales"]]
     : [["/eventos", "Eventos"], ["/ventas", "Ventas"], ["/personal", "Personal"]];
   const org = user.role === "SUPERADMIN" ? "Rocktickets" : user.organizerName;
+  // El editor del plano necesita todo el ancho de la ventana; el resto del panel va en columna centrada
+  const wide = useMatch("/locales/:id/plano") !== null;
+  const container = wide ? "max-w-none px-4 sm:px-6" : "max-w-5xl px-4";
 
   return (
     <div className="min-h-screen">
       <header className="sticky top-0 z-20 border-b border-line bg-bg/95 backdrop-blur">
-        <div className="mx-auto flex max-w-5xl flex-wrap items-center gap-x-6 px-4">
+        <div className={`mx-auto flex ${container} flex-wrap items-center gap-x-6`}>
           <div className="flex h-14 items-center">
             <Logo />
           </div>
@@ -44,7 +47,7 @@ export default function Layout() {
           </div>
         </div>
       </header>
-      <main className="mx-auto max-w-5xl px-4 py-8 sm:py-10">
+      <main className={`mx-auto ${container} ${wide ? "py-6" : "py-8 sm:py-10"}`}>
         <Outlet />
       </main>
     </div>

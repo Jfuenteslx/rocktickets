@@ -1,4 +1,5 @@
-import { IsDateString, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { EVENT_CATEGORIES, type EventCategory } from '../event-categories.js';
 
 // Todos opcionales: solo se cambia lo que viene en el body
 export class UpdateEventDto {
@@ -14,6 +15,10 @@ export class UpdateEventDto {
   @IsOptional()
   @IsUUID()
   venueId?: string;
+
+  @IsOptional()
+  @IsIn(EVENT_CATEGORIES)
+  category?: EventCategory;
 
   @IsOptional()
   @IsDateString()

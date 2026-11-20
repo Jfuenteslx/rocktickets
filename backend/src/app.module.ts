@@ -18,6 +18,8 @@ import { VenuesModule } from './venues/venues.module.js';
 import { StaffModule } from './staff/staff.module.js';
 import { DoorModule } from './door/door.module.js';
 import { SalesModule } from './sales/sales.module.js';
+import { MailModule } from './mail/mail.module.js';
+import { BuyersModule } from './buyers/buyers.module.js';
 
 @Module({
   imports: [
@@ -25,11 +27,13 @@ import { SalesModule } from './sales/sales.module.js';
     // lo endurecen con @Throttle. Con varias instancias, el contador pasa a Redis.
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 120 }]),
     DatabaseModule,
+    MailModule,
     QueueModule,
     RealtimeModule,
     AuditModule,
     AuthModule,
     EventsModule,
+    BuyersModule,
     OrdersModule,
     PaymentsModule,
     TicketsModule,

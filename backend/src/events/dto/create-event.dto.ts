@@ -1,4 +1,5 @@
-import { IsDateString, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { IsDateString, IsIn, IsOptional, IsString, IsUUID, MinLength } from 'class-validator';
+import { EVENT_CATEGORIES, type EventCategory } from '../event-categories.js';
 
 export class CreateEventDto {
   @IsUUID()
@@ -16,6 +17,10 @@ export class CreateEventDto {
   @IsOptional()
   @IsString()
   description?: string;
+
+  @IsOptional()
+  @IsIn(EVENT_CATEGORIES)
+  category?: EventCategory;
 
   @IsDateString()
   startsAt!: string;

@@ -10,7 +10,7 @@ const ORDER_BADGE = { PAGADA: ["ok", "Pagada"], PENDIENTE_PAGO: ["warn", "Pendie
 const TICKET_BADGE = { VALIDO: ["info", "Válida"], UTILIZADO: ["ok", "Ya ingresó"], ANULADO: ["bad", "Anulada"], RESERVADO: ["quiet", "Reservada"] };
 const PAY_BADGE = {
   PENDIENTE: ["warn", "Pendiente"], CONFIRMADO: ["ok", "Confirmado"], EXPIRADO: ["quiet", "Expirado"], ERROR: ["bad", "Con error"],
-  CONFIRMADO_SIN_ORDEN: ["bad", "Cobrado sin orden"], REEMBOLSADO: ["quiet", "Reembolsado"],
+  CONFIRMADO_SIN_ORDEN: ["bad", "Cobrado sin orden"], REEMBOLSADO: ["quiet", "Reembolsado"], NO_CONCILIADO: ["bad", "Monto distinto"],
 };
 const B = ({ map, k }) => <Badge tone={(map[k] ?? ["quiet", k])[0]}>{(map[k] ?? ["quiet", k])[1]}</Badge>;
 

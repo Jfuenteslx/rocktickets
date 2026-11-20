@@ -7,7 +7,8 @@ import { AppModule } from './app.module.js';
 import { setupAdmin } from './admin/admin.setup.js';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody: el webhook de pagos se firma sobre el cuerpo EXACTO recibido
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Permite que el frontend (y más adelante las apps móviles) le peguen a la API
   // desde otro origen. En producción esto se restringe a los dominios reales.

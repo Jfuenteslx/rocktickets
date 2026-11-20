@@ -15,6 +15,8 @@ import Organizers from "./pages/Organizers.jsx";
 import OrganizerDetail from "./pages/OrganizerDetail.jsx";
 import Staff from "./pages/Staff.jsx";
 import Venues from "./pages/Venues.jsx";
+import VenuePlan from "./pages/VenuePlan.jsx";
+import VenueProfile from "./pages/VenueProfile.jsx";
 
 function Protected({ children }) {
   const { user, loading } = useAuth();
@@ -52,6 +54,8 @@ export default function App() {
             <Route path="/ventas" element={<Sales />} />
             <Route path="/personal" element={<Staff />} />
             <Route path="/locales" element={<SuperOnly><Venues /></SuperOnly>} />
+            <Route path="/locales/:id/plano" element={<SuperOnly><VenuePlan /></SuperOnly>} />
+            <Route path="/locales/:id/ficha" element={<SuperOnly><VenueProfile /></SuperOnly>} />
           </Route>
           <Route path="*" element={<Navigate to="/eventos" replace />} />
         </Routes>

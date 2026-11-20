@@ -1,9 +1,9 @@
 import { useEffect, useState } from "react";
 import { useParams } from "react-router-dom";
-import api from "../lib/api";
+import api, { API_URL } from "../lib/api";
+import { formatDayLong, formatTime } from "../lib/events";
 import TicketCard from "../components/TicketCard";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+import { ErrorBox, Loading } from "../components/StateMessage";
 
 // Página pública de una cortesía: el invitado abre su enlace y descarga sus entradas.
 export default function CourtesyTickets() {
@@ -18,33 +18,26 @@ export default function CourtesyTickets() {
       .catch(() => setError("No encontramos estas entradas. Revisa que el enlace esté completo."));
   }, [token]);
 
-  if (error) return <p className="p-6 text-red-600">{error}</p>;
-  if (!data) return <p className="p-6 text-zinc-500">Cargando...</p>;
+  if (error) return <ErrorBox>{error}</ErrorBox>;
+  if (!data) return <Loading />;
 
   const { event, tickets } = data;
   return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-1">Tus entradas de cortesía</h1>
-      <p className="text-zinc-500 mb-6">Para {data.recipientName}</p>
+    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+      <h1 className="font-display text-5xl font-extrabold uppercase text-white">Tus entradas de cortesía</h1>
+      <p className="mt-1 text-sm text-zinc-500">Para {data.recipientName}</p>
 
-      <p className="text-sm text-zinc-600 mb-4">
-        {event.name}
-        {event.venueName ? ` · ${event.venueName}` : ""} ·{" "}
-        {new Date(event.startsAt).toLocaleString("es-BO", {
-          weekday: "long",
-          day: "numeric",
-          month: "long",
-          hour: "2-digit",
-          minute: "2-digit",
-        })}
-      </p>
+      <div className="card mt-6 p-4">
+        <p className="font-semibold text-white">{event.name}</p>
+        <p className="mt-0.5 text-sm text-zinc-400">
+          {formatDayLong(event.startsAt)} · {formatTime(event.startsAt)}
+          {event.venueName ? ` · ${event.venueName}` : ""}
+        </p>
+      </div>
 
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="font-semibold">Entradas ({tickets.length})</h2>
-        <a
-          href={`${API_URL}/courtesies/token/${token}/tickets.pdf`}
-          className="text-sm bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-md"
-        >
+      <div className="mb-4 mt-8 flex items-center justify-between gap-3">
+        <h2 className="section-title">Entradas ({tickets.length})</h2>
+        <a href={`${API_URL}/courtesies/token/${token}/tickets.pdf`} className="btn btn-primary">
           Descargar PDF
         </a>
       </div>
@@ -54,9 +47,7 @@ export default function CourtesyTickets() {
           <TicketCard key={t.id} token={token} ticket={t} event={event} basePath="/courtesies/token" />
         ))}
       </div>
-      <p className="text-xs text-zinc-400 mt-6">
-        Presenta el QR en la puerta. Cada entrada se puede usar una sola vez.
-      </p>
+      <p className="mt-6 text-xs text-zinc-500">Presenta el QR en la puerta. Cada entrada se puede usar una sola vez.</p>
     </div>
   );
 }

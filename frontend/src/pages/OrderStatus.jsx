@@ -1,113 +1,101 @@
-import { useEffect, useRef, useState } from "react";
-import { useParams } from "react-router-dom";
-import api from "../lib/api";
+import { useCallback, useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import api, { API_URL } from "../lib/api";
+import useCountdown, { formatCountdown } from "../lib/useCountdown";
+import { formatDayLong, formatMoney, formatTime } from "../lib/events";
 import TicketCard from "../components/TicketCard";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+import PaymentPanel from "../components/PaymentPanel";
+import { ErrorBox, Loading } from "../components/StateMessage";
 
 export default function OrderStatus() {
   const { token } = useParams();
   const [order, setOrder] = useState(null);
   const [error, setError] = useState("");
-  const [simulating, setSimulating] = useState(false);
-  const intervalRef = useRef(null);
 
-  function load() {
-    return api
-      .get(`/orders/token/${token}`)
-      .then(({ data }) => setOrder(data))
-      .catch(() => setError("Orden no encontrada"));
-  }
+  const load = useCallback(
+    () =>
+      api
+        .get(`/orders/token/${token}`)
+        .then(({ data }) => setOrder(data))
+        .catch(() => setError("No encontramos esta compra. Revisa que el enlace esté completo.")),
+    [token],
+  );
 
   useEffect(() => {
     load();
-  }, [token]);
+  }, [load]);
 
-  // Polling mientras esté pendiente de pago — cada 3s. Se detiene solo
-  // cuando el estado deja de ser PENDIENTE_PAGO.
+  // Mientras espera el pago, consulta cada 3 s; se detiene cuando el estado cambia.
+  const pending = order?.status === "PENDIENTE_PAGO";
   useEffect(() => {
-    if (order?.status === "PENDIENTE_PAGO") {
-      intervalRef.current = setInterval(load, 3000);
-      return () => clearInterval(intervalRef.current);
-    }
-  }, [order?.status]);
+    if (!pending) return;
+    const t = setInterval(load, 3000);
+    return () => clearInterval(t);
+  }, [pending, load]);
 
-  async function handleSimulate() {
-    const pendingPayment = order.payments.find((p) => p.status === "PENDIENTE");
-    if (!pendingPayment) return;
-    setSimulating(true);
-    try {
-      await api.post(`/demo/payments/${pendingPayment.id}/simulate-bank-confirmation`);
-      await load();
-    } catch (err) {
-      setError(err.response?.data?.message || "No se pudo simular el pago");
-    } finally {
-      setSimulating(false);
-    }
-  }
+  const secondsLeft = useCountdown(pending ? order.expiresAt : null);
 
-  if (error) return <p className="p-6 text-red-600">{error}</p>;
-  if (!order) return <p className="p-6 text-zinc-500">Cargando...</p>;
+  if (error) return <ErrorBox>{error}</ErrorBox>;
+  if (!order) return <Loading />;
 
   return (
-    <div className="max-w-xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-1">Tu compra</h1>
-      <p className="text-zinc-500 mb-6">Orden #{order.id.slice(0, 8)}</p>
+    <div className="mx-auto max-w-2xl px-4 py-10 sm:px-6">
+      <h1 className="font-display text-5xl font-extrabold uppercase text-white">Tu compra</h1>
+      <p className="mt-1 text-sm text-zinc-500">Orden #{order.id.slice(0, 8)}</p>
 
-      {order.status === "PENDIENTE_PAGO" && (
-        <div className="border border-amber-200 bg-amber-50 rounded-xl p-5">
-          <p className="font-medium text-amber-800">Esperando confirmación del pago...</p>
-          <p className="text-sm text-amber-700 mt-1">
-            Total: Bs {order.payments[0]?.amount} · Expira{" "}
-            {new Date(order.expiresAt).toLocaleTimeString("es-BO")}
+      {order.event && (
+        <div className="card mt-6 p-4">
+          <p className="font-semibold text-white">{order.event.name}</p>
+          <p className="mt-0.5 text-sm text-zinc-400">
+            {formatDayLong(order.event.startsAt)} · {formatTime(order.event.startsAt)}
+            {order.event.venueName ? ` · ${order.event.venueName}` : ""}
           </p>
-          <p className="text-xs text-amber-600 mt-3">
-            Esta pantalla se actualiza sola cuando se confirme el pago.
-          </p>
-
-          {/* Botón de DEMO — simula la confirmación del banco. Solo funciona
-              si el backend corre con NODE_ENV != production. */}
-          <button
-            onClick={handleSimulate}
-            disabled={simulating}
-            className="mt-4 text-sm bg-amber-600 hover:bg-amber-500 disabled:bg-zinc-300 text-white px-4 py-2 rounded-md"
-          >
-            {simulating ? "Simulando..." : "🧪 Simular pago (demo)"}
-          </button>
         </div>
       )}
 
+      {pending && (
+        <div className="mt-6 rounded-xl border border-amber-700/60 bg-amber-950/30 p-5">
+          <div className="flex items-center justify-between gap-4">
+            <p className="font-semibold text-amber-300">Esperando la confirmación del pago…</p>
+            <p className="font-mono text-2xl font-bold text-amber-200" aria-label="Tiempo restante">
+              {formatCountdown(secondsLeft)}
+            </p>
+          </div>
+          <p className="mt-2 text-sm text-amber-200/80">
+            Total: {formatMoney(order.payments[0]?.amount ?? 0)}. Reservamos tus entradas hasta que se acabe el tiempo.
+          </p>
+          <p className="mt-3 text-xs text-amber-200/60">Esta pantalla se actualiza sola cuando se confirme el pago. Guarda este enlace.</p>
+        </div>
+      )}
+
+      {pending && <PaymentPanel token={token} order={order} onOrder={setOrder} />}
+
       {order.status === "EXPIRADA" && (
-        <div className="border border-zinc-200 bg-zinc-50 rounded-xl p-5">
-          <p className="font-medium text-zinc-700">Esta orden expiró sin confirmarse el pago.</p>
+        <div className="card mt-6 p-5">
+          <p className="font-medium text-white">Esta compra expiró sin confirmarse el pago.</p>
+          <p className="mt-1 text-sm text-zinc-400">Las entradas volvieron a estar disponibles. Si ya pagaste, escríbenos desde la página de ayuda.</p>
+          <div className="mt-4 flex gap-3">
+            {order.event?.id && (
+              <Link to={`/eventos/${order.event.id}`} className="btn btn-primary">
+                Volver a comprar
+              </Link>
+            )}
+            <Link to="/ayuda" className="btn btn-ghost">
+              Ayuda
+            </Link>
+          </div>
         </div>
       )}
 
       {order.status === "PAGADA" && (
-        <div>
-          <div className="border border-green-200 bg-green-50 rounded-xl p-4 mb-4">
-            <p className="font-medium text-green-800">¡Pago confirmado!</p>
+        <div className="mt-6">
+          <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/30 p-4">
+            <p className="font-semibold text-emerald-300">¡Pago confirmado! Tus entradas están listas.</p>
           </div>
 
-          {order.event && (
-            <p className="text-sm text-zinc-600 mb-4">
-              {order.event.name} ·{" "}
-              {new Date(order.event.startsAt).toLocaleString("es-BO", {
-                weekday: "long",
-                day: "numeric",
-                month: "long",
-                hour: "2-digit",
-                minute: "2-digit",
-              })}
-            </p>
-          )}
-
-          <div className="flex items-center justify-between mb-3">
-            <h2 className="font-semibold">Tus tickets ({order.tickets.length})</h2>
-            <a
-              href={`${API_URL}/orders/token/${token}/tickets.pdf`}
-              className="text-sm bg-red-600 hover:bg-red-500 text-white px-3 py-1.5 rounded-md"
-            >
+          <div className="mb-4 mt-8 flex items-center justify-between gap-3">
+            <h2 className="section-title">Tus tickets ({order.tickets.length})</h2>
+            <a href={`${API_URL}/orders/token/${token}/tickets.pdf`} className="btn btn-primary">
               Descargar PDF
             </a>
           </div>
@@ -117,6 +105,7 @@ export default function OrderStatus() {
               <TicketCard key={t.id} token={token} ticket={t} event={order.event} />
             ))}
           </div>
+          <p className="mt-6 text-xs text-zinc-500">Presenta el QR en la puerta. Cada entrada se puede usar una sola vez.</p>
         </div>
       )}
     </div>

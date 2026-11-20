@@ -6,10 +6,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { and, count, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
-import { courtesy, event, organizer, sector, ticket, tier, user, venue } from '../db/index.js';
+import { courtesy, event, organizer, sector, ticket, tier, user, venue, venuePhoto } from '../db/index.js';
 import { canManageOrganizer, type AuthUser } from '../auth/access.js';
 import type { CreateEventDto } from './dto/create-event.dto.js';
 import type { CreateTierDto } from './dto/create-tier.dto.js';
@@ -53,9 +53,22 @@ export class EventsService {
   // muestran al público). La disponibilidad se DERIVA contando tickets
   // DISPONIBLE del tier; nunca se almacena.
   private async buildPublicEvent(eventRow: typeof event.$inferSelect) {
-    const sectors = await this.db.select().from(sector).where(eq(sector.venueId, eventRow.venueId));
+    const sectors = await this.db
+      .select()
+      .from(sector)
+      .where(and(eq(sector.venueId, eventRow.venueId), eq(sector.sellable, true)));
     const tiers = await this.db.select().from(tier).where(eq(tier.eventId, eventRow.id));
     const { byTier } = await ticketCountsByTier(this.db, eventRow.id);
+    const [venueRow] = await this.db
+      .select({ name: venue.name, address: venue.address, mapsUrl: venue.mapsUrl, openingHours: venue.openingHours })
+      .from(venue)
+      .where(eq(venue.id, eventRow.venueId))
+      .limit(1);
+    const venuePhotos = await this.db
+      .select({ id: venuePhoto.id, path: venuePhoto.path })
+      .from(venuePhoto)
+      .where(eq(venuePhoto.venueId, eventRow.venueId))
+      .orderBy(asc(venuePhoto.position), asc(venuePhoto.createdAt));
 
     const now = new Date();
     const publicSectors = sectors
@@ -88,6 +101,17 @@ export class EventsService {
     return {
       ...publicFields,
       imageUrl: eventRow.imagePath ? `/uploads/${eventRow.imagePath}` : null,
+      venueName: venueRow?.name ?? null,
+      // Ficha pública del local (sección "El lugar")
+      venue: venueRow
+        ? {
+            name: venueRow.name,
+            address: venueRow.address,
+            mapsUrl: venueRow.mapsUrl,
+            openingHours: venueRow.openingHours ?? [],
+            photos: venuePhotos.map((p) => ({ id: p.id, url: `/uploads/${p.path}` })),
+          }
+        : null,
       sectors: publicSectors,
     };
   }
@@ -96,7 +120,11 @@ export class EventsService {
   // (precio, estado de venta y conteos). Todo se DERIVA contando tickets; nada se almacena.
   async getInventory(eventId: string, actor: AuthUser) {
     const ev = await this.getManagedEvent(eventId, actor);
-    const sectors = await this.db.select().from(sector).where(eq(sector.venueId, ev.venueId)).orderBy(sector.name);
+    const sectors = await this.db
+      .select()
+      .from(sector)
+      .where(and(eq(sector.venueId, ev.venueId), eq(sector.sellable, true)))
+      .orderBy(sector.name);
     const tiers = await this.db.select().from(tier).where(eq(tier.eventId, eventId)).orderBy(tier.createdAt);
     const { byTier, unassigned } = await ticketCountsByTier(this.db, eventId);
 
@@ -267,7 +295,7 @@ export class EventsService {
   // Locales con sus sectores, para el formulario de evento (los venues son de la plataforma)
   async listVenuesWithSectors() {
     const venues = await this.db.select().from(venue).orderBy(venue.name);
-    const sectors = await this.db.select().from(sector).orderBy(sector.name);
+    const sectors = await this.db.select().from(sector).where(eq(sector.sellable, true)).orderBy(sector.name);
     return venues.map((v) => {
       const own = sectors.filter((s) => s.venueId === v.id);
       return {
@@ -347,6 +375,7 @@ export class EventsService {
         commissionPct: org.defaultCommissionPct,
         name: dto.name,
         description: dto.description,
+        category: dto.category ?? 'CONCIERTO',
         startsAt,
         endsAt,
       })
@@ -407,6 +436,7 @@ export class EventsService {
     const changes: Partial<typeof event.$inferInsert> = { startsAt, endsAt };
     if (dto.name !== undefined) changes.name = dto.name;
     if (dto.description !== undefined) changes.description = dto.description;
+    if (dto.category !== undefined) changes.category = dto.category;
     if (dto.venueId !== undefined) changes.venueId = dto.venueId;
 
     const [updated] = await this.db.update(event).set(changes).where(eq(event.id, eventId)).returning();
@@ -461,6 +491,9 @@ export class EventsService {
     // El sector debe ser del venue del evento (no se puede vender un sector ajeno)
     if (sectorRow.venueId !== eventRow.venueId) {
       throw new BadRequestException('El sector no pertenece al venue de este evento');
+    }
+    if (!sectorRow.sellable) {
+      throw new BadRequestException('Este sector no es vendible: no admite tiers');
     }
 
     const kind = dto.kind ?? 'VENTA';

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import api, { errorMessage } from "../lib/api.js";
 import Banner from "../components/Banner.jsx";
 
@@ -206,7 +207,11 @@ export default function Venues() {
             <section key={v.id} aria-label={v.name} className="rounded-lg border border-line bg-surface p-5 sm:p-6">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <VenueName venue={v} onSaved={done} />
-                <p className="text-sm text-muted">Aforo total <span className="font-medium text-ink">{v.capacity}</span></p>
+                <div className="flex items-center gap-4">
+                  <p className="text-sm text-muted">Aforo total <span className="font-medium text-ink">{v.capacity}</span></p>
+                  <Link to={`/locales/${v.id}/ficha`} className="btn btn-quiet !py-1.5 !text-sm">Ficha del local</Link>
+                  <Link to={`/locales/${v.id}/plano`} className="btn btn-quiet !py-1.5 !text-sm">Ver plano</Link>
+                </div>
               </div>
               {v.sectors.length === 0 ? (
                 <p className="mt-4 text-[15px] text-muted">Sin sectores: todavía no se puede usar en eventos.</p>

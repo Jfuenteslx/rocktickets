@@ -4,6 +4,7 @@ import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
 import { payment, order, orderItem, ticket } from '../db/index.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
+import { OrderMailService } from '../mail/order-mail.service.js';
 
 export type ConfirmPaymentResult =
   | { outcome: 'CONFIRMADO'; ticketsCreated: number }
@@ -23,13 +24,13 @@ export class PaymentsService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     private readonly realtimeGateway: RealtimeGateway,
+    private readonly orderMail: OrderMailService,
   ) {}
 
   // Invariante #7 del diseño: Payment→CONFIRMADO + Order→PAGADA + generación
   // de Tickets, todo en una única transacción. Nunca uno sin el otro.
   //
-  // Quién la va a llamar en el futuro: el worker de polling a BNB, cuando
-  // getQRStatusAsync devuelva "USADO". Hoy no hay caller real todavía.
+  // La llama PagosYaWebhookService cuando llega un aviso de pago firmado y con el monto correcto.
   async confirmPayment(paymentId: string): Promise<ConfirmPaymentResult> {
     const result = await this.db.transaction<TransactionResult>(async (tx) => {
       const [paymentRow] = await tx
@@ -40,7 +41,9 @@ export class PaymentsService {
         .limit(1);
 
       if (!paymentRow) throw new NotFoundException('Payment no encontrado');
-      if (paymentRow.status !== 'PENDIENTE') {
+      // EXPIRADO también cuenta: el QR pudo vencer justo mientras el banco cobraba. Si la orden
+      // sigue vigente se confirma; si no, el bloque de abajo lo manda a revisión.
+      if (paymentRow.status !== 'PENDIENTE' && paymentRow.status !== 'EXPIRADO') {
         throw new ConflictException(`Payment ya está en estado ${paymentRow.status}`);
       }
 
@@ -118,6 +121,8 @@ export class PaymentsService {
       } catch (err) {
         this.logger.warn(`No se pudo emitir order:paid: ${err}`);
       }
+      // Correo con el acceso a las entradas (best-effort, no espera ni afecta la confirmación)
+      void this.orderMail.sendPaymentConfirmed(result.orderId);
       return { outcome: 'CONFIRMADO', ticketsCreated: result.ticketsCreated };
     }
 

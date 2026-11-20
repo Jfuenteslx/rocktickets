@@ -5,7 +5,15 @@ import { useAuth } from "../lib/auth.jsx";
 import { fromLocalInput, toLocalInput } from "../lib/format.js";
 import ImagePicker from "../components/ImagePicker.jsx";
 
-const empty = { name: "", description: "", venueId: "", organizerId: "", startsAt: "", endsAt: "" };
+const CATEGORIES = [
+  ["CONCIERTO", "Concierto"],
+  ["FESTIVAL", "Festival"],
+  ["FIESTA", "Fiesta"],
+  ["TEATRO_ARTE", "Teatro y arte"],
+  ["OTRO", "Otro"],
+];
+
+const empty = { name: "", description: "", category: "CONCIERTO", venueId: "", organizerId: "", startsAt: "", endsAt: "" };
 
 export default function EventForm() {
   const { id } = useParams();
@@ -46,6 +54,7 @@ export default function EventForm() {
           setForm({
             name: e.data.name,
             description: e.data.description ?? "",
+            category: e.data.category ?? "CONCIERTO",
             venueId: e.data.venueId,
             organizerId: e.data.organizerId,
             startsAt: toLocalInput(e.data.startsAt),
@@ -92,6 +101,7 @@ export default function EventForm() {
       const body = {
         name: form.name.trim(),
         description: form.description.trim() || undefined,
+        category: form.category,
         venueId: form.venueId,
         startsAt: fromLocalInput(form.startsAt),
         endsAt: fromLocalInput(form.endsAt),
@@ -185,6 +195,14 @@ export default function EventForm() {
             <label htmlFor="name" className="field-label">Nombre del evento</label>
             <input id="name" className="input" value={form.name} onChange={set("name")} placeholder="Noche de rock en vivo" maxLength={120} />
             {errors.name && <p className="field-error">{errors.name}</p>}
+          </div>
+
+          <div>
+            <label htmlFor="category" className="field-label">Categoría</label>
+            <select id="category" className="input" value={form.category} onChange={set("category")}>
+              {CATEGORIES.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+            </select>
+            <p className="field-hint">Define en qué fila de la web pública aparece el evento.</p>
           </div>
 
           <div>

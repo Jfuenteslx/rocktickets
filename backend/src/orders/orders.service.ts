@@ -6,6 +6,11 @@ import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
 import { event, sector, tier, order, orderItem, payment, ticket, venue } from '../db/index.js';
 import type { CreateOrderDto } from './dto/create-order.dto.js';
+import { CheckoutService } from '../payments/checkout.service.js';
+import { TERMS_VERSION } from './terms.js';
+
+// El texto del QR no sale de la API: el comprador lo ve como imagen (GET .../payment/qr.png)
+const publicPayment = <T extends { qrPayload: string | null }>({ qrPayload: _qr, ...rest }: T) => rest;
 
 const RESERVATION_MINUTES = 15;
 const RECONCILIATION_HOURS = 2;
@@ -15,9 +20,10 @@ export class OrdersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     @InjectQueue('order-expiration') private readonly expirationQueue: Queue,
+    private readonly checkout: CheckoutService,
   ) {}
 
-  private async runCreateOrderTransaction(dto: CreateOrderDto) {
+  private async runCreateOrderTransaction(dto: CreateOrderDto, buyerId: string | null) {
     const [eventRow] = await this.db.select().from(event).where(eq(event.id, dto.eventId)).limit(1);
     if (!eventRow) throw new NotFoundException('Evento no encontrado');
     if (eventRow.status !== 'ACTIVO') {
@@ -110,6 +116,9 @@ export class OrdersService {
           buyerPhone: dto.buyerPhone,
           status: 'PENDIENTE_PAGO',
           expiresAt,
+          buyerId,
+          termsAcceptedAt: now,
+          termsVersion: TERMS_VERSION,
         })
         .returning();
 
@@ -157,8 +166,8 @@ export class OrdersService {
     });
   }
 
-  async createOrder(dto: CreateOrderDto) {
-    const result = await this.runCreateOrderTransaction(dto);
+  async createOrder(dto: CreateOrderDto, buyerId: string | null = null) {
+    const result = await this.runCreateOrderTransaction(dto, buyerId);
 
     // jobId = order.id: si por algún motivo este método se llamara dos
     // veces para la misma orden, BullMQ deduplica y no crea un segundo job.
@@ -168,7 +177,10 @@ export class OrdersService {
       { delay: RESERVATION_MINUTES * 60_000, jobId: result.order.id },
     );
 
-    return result;
+    // QR de pago (fuera de la transacción de reserva: es una llamada a la pasarela).
+    // Si falla, la compra sigue y el comprador pide el QR de nuevo desde su pantalla.
+    const charged = await this.checkout.tryCreateCharge(result.payment.id);
+    return { ...result, payment: publicPayment(charged ?? result.payment) };
   }
 
   async getOrderByToken(accessToken: string) {
@@ -220,9 +232,9 @@ export class OrdersService {
     return {
       ...foundOrder,
       items,
-      payments,
+      payments: payments.map(publicPayment),
       tickets,
-      event: ev ? { name: ev.name, startsAt: ev.startsAt, endsAt: ev.endsAt, venueName: ven?.name ?? null } : null,
+      event: ev ? { id: ev.id, name: ev.name, startsAt: ev.startsAt, endsAt: ev.endsAt, venueName: ven?.name ?? null } : null,
     };
   }
 

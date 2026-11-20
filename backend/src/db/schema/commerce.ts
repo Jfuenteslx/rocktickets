@@ -9,11 +9,24 @@ import {
   unique,
   index,
   uniqueIndex,
+  jsonb,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { orderStatusEnum, paymentStatusEnum } from './enums.js';
 import { event, tier } from './venue.js';
 import { user } from './identity.js';
+
+// Cuenta de comprador (inicio de sesión con Google). Separada de `user` (personal del panel):
+// una cuenta de comprador nunca tiene roles ni permisos de administración.
+export const buyerAccount = pgTable('buyer_account', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  googleSub: text('google_sub').notNull().unique(), // identificador estable de la cuenta de Google
+  email: text('email').notNull(),
+  name: text('name').notNull(),
+  pictureUrl: text('picture_url'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  lastLoginAt: timestamp('last_login_at', { withTimezone: true }).notNull().defaultNow(),
+});
 
 export const order = pgTable('order', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -21,6 +34,8 @@ export const order = pgTable('order', {
   // Guest checkout: NULL. Se completa solo si en el futuro existen cuentas
   // de comprador — ninguna Order histórica se rompe cuando eso pase.
   userId: uuid('user_id').references(() => user.id),
+  // Cuenta de comprador con la que se hizo la compra (NULL = compra de invitado)
+  buyerId: uuid('buyer_id').references(() => buyerAccount.id),
   // UUID separado del id — es un credencial de acceso (/mi-orden/{token}),
   // no un identificador interno. Tratar como secreto, no exponerlo en logs.
   accessToken: uuid('access_token').notNull().defaultRandom().unique(),
@@ -31,12 +46,17 @@ export const order = pgTable('order', {
   // Fin de la reserva de stock (15 min desde creación) — NO confundir con
   // Payment.reconciliationExpiresAt, que es una ventana distinta e independiente.
   expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  // Constancia de que el comprador aceptó los términos y la política de privacidad al comprar.
+  // Nulos en las órdenes anteriores a esta constancia.
+  termsAcceptedAt: timestamp('terms_accepted_at', { withTimezone: true }),
+  termsVersion: text('terms_version'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('order_event_id_idx').on(table.eventId),
   // El job de expiración filtra por status = PENDIENTE_PAGO constantemente
   index('order_status_idx').on(table.status),
   index('order_buyer_email_idx').on(table.buyerEmail),
+  index('order_buyer_id_idx').on(table.buyerId),
 ]);
 
 export const orderItem = pgTable('order_item', {
@@ -75,6 +95,10 @@ export const payment = pgTable('payment', {
   // Ventana de polling a BNB (2h desde creación de Order) — independiente
   // de Order.expiresAt. Ver: condición de carrera resuelta con CONFIRMADO_SIN_ORDEN.
   reconciliationExpiresAt: timestamp('reconciliation_expires_at', { withTimezone: true }).notNull(),
+  // Cobro con QR (PagosYa Embedded): el texto que se dibuja como QR y la vigencia del
+  // checkout (5 min, siempre dentro de los 15 min de reserva de la orden).
+  qrPayload: text('qr_payload'),
+  checkoutExpiresAt: timestamp('checkout_expires_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('payment_order_id_idx').on(table.orderId),
@@ -91,6 +115,28 @@ export const payment = pgTable('payment', {
   check('payment_amount_non_negative', sql`${table.amount} >= 0`),
 ]);
 
+// Registro de cada notificación (webhook) del proveedor de pagos. Sirve para:
+//  - idempotencia: provider_tx_id es único, un reintento del mismo aviso no se procesa dos veces;
+//  - auditoría y revisión: pagos dobles, montos distintos y referencias desconocidas.
+// kind: RECIBIDO (en proceso) | CONFIRMADO | CONFIRMADO_SIN_ORDEN | MONTO_DISTINTO |
+//       DUPLICADO | REFERENCIA_DESCONOCIDA
+export const paymentEvent = pgTable('payment_event', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  // NULL cuando la referencia del aviso no corresponde a ningún cobro nuestro
+  paymentId: uuid('payment_id').references(() => payment.id),
+  // Lo que informó el proveedor: referencia (id de la orden) y su id de transacción
+  reference: text('reference').notNull(),
+  providerTxId: text('provider_tx_id').notNull(),
+  kind: text('kind').notNull(),
+  amount: numeric('amount', { precision: 10, scale: 2 }).notNull(),
+  raw: jsonb('raw'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => [
+  uniqueIndex('payment_event_provider_tx_unique').on(table.providerTxId),
+  index('payment_event_payment_id_idx').on(table.paymentId),
+  index('payment_event_kind_idx').on(table.kind),
+]);
+
 export const orderRelations = relations(order, ({ one, many }) => ({
   event: one(event, { fields: [order.eventId], references: [event.id] }),
   buyer: one(user, { fields: [order.userId], references: [user.id] }),
@@ -103,6 +149,11 @@ export const orderItemRelations = relations(orderItem, ({ one, many }) => ({
   tier: one(tier, { fields: [orderItem.tierId], references: [tier.id] }),
 }));
 
-export const paymentRelations = relations(payment, ({ one }) => ({
+export const paymentRelations = relations(payment, ({ one, many }) => ({
   order: one(order, { fields: [payment.orderId], references: [order.id] }),
+  events: many(paymentEvent),
+}));
+
+export const paymentEventRelations = relations(paymentEvent, ({ one }) => ({
+  payment: one(payment, { fields: [paymentEvent.paymentId], references: [payment.id] }),
 }));

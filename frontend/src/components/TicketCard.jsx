@@ -1,7 +1,5 @@
 import { useState } from "react";
-import api from "../lib/api";
-
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
+import api, { API_URL } from "../lib/api";
 
 function fmtWhen(iso) {
   return new Date(iso).toLocaleString("es-BO", {
@@ -96,35 +94,31 @@ export default function TicketCard({ token, ticket, event, basePath = "/orders/t
   }
 
   return (
-    <div className="border border-zinc-200 rounded-xl overflow-hidden">
-      <div className="bg-red-600 h-1.5" />
-      <div className="p-4 flex gap-4 items-center">
+    <div className="card overflow-hidden">
+      <div className="h-1.5 bg-brand" />
+      <div className="flex items-center gap-4 p-4">
         <img
           src={`${API_URL}${qrPath}`}
           alt={`QR del ticket ${ticket.shortCode}`}
-          className={`w-32 h-32 shrink-0 ${used ? "opacity-30" : ""}`}
+          className={`h-32 w-32 shrink-0 rounded-md bg-white p-1.5 ${used ? "opacity-30" : ""}`}
         />
         <div className="min-w-0">
-          <p className="font-mono text-2xl font-bold">{ticket.shortCode}</p>
-          <p className="text-sm text-zinc-600">
+          <p className="font-mono text-2xl font-bold text-white">{ticket.shortCode}</p>
+          <p className="text-sm text-zinc-400">
             {ticket.sectorName} · {ticket.tierName}
           </p>
           <span
-            className={`inline-block mt-1 text-xs px-2 py-0.5 rounded-full ${
-              used ? "bg-zinc-200 text-zinc-600" : "bg-green-100 text-green-700"
+            className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
+              used ? "bg-zinc-700 text-zinc-300" : "bg-emerald-900/60 text-emerald-300"
             }`}
           >
             {used ? "YA UTILIZADO" : "VÁLIDO"}
           </span>
           <div>
-            <button
-              onClick={handleDownload}
-              disabled={busy || used}
-              className="mt-3 text-sm border border-zinc-300 hover:bg-zinc-50 disabled:opacity-50 px-3 py-1.5 rounded-md"
-            >
-              {busy ? "Generando..." : "Descargar PNG"}
+            <button onClick={handleDownload} disabled={busy || used} className="btn btn-ghost mt-3 px-3 py-1.5">
+              {busy ? "Generando…" : "Descargar PNG"}
             </button>
-            {err && <p className="text-xs text-red-600 mt-1">{err}</p>}
+            {err && <p className="mt-1 text-xs text-red-400">{err}</p>}
           </div>
         </div>
       </div>

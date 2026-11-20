@@ -6,6 +6,14 @@ import { fmtBs, fmtDateTime, fmtPct, plural } from "../lib/format.js";
 import Badge from "../components/Badge.jsx";
 import Kpi from "../components/Kpi.jsx";
 
+const REVIEW_LABELS = {
+  ERROR: "Con error",
+  CONFIRMADO_SIN_ORDEN: "Cobrado sin orden vigente",
+  NO_CONCILIADO: "Monto distinto al cobrado",
+  DUPLICADO: "Pago doble (reembolsar)",
+  REFERENCIA_DESCONOCIDA: "Referencia desconocida",
+};
+
 function ReviewList() {
   const [rows, setRows] = useState(null);
   const [err, setErr] = useState("");
@@ -26,7 +34,7 @@ function ReviewList() {
           </div>
           <div className="text-right">
             <p className="font-medium tabular-nums">{fmtBs(r.amount)}</p>
-            <Badge tone="bad">{r.status === "ERROR" ? "Con error" : "Cobrado sin orden vigente"}</Badge>
+            <Badge tone="bad">{REVIEW_LABELS[r.status] ?? r.status}</Badge>
             <p className="mt-1 text-[12px] text-muted">{fmtDateTime(r.createdAt)}</p>
           </div>
         </li>

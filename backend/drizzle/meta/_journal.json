@@ -57,6 +57,55 @@
       "when": 1791828661840,
       "tag": "0007_puerta_acceso_manual",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794511842796,
+      "tag": "0008_creador_venues_niveles",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1794537787013,
+      "tag": "0009_poligonos_sectores",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1794545893771,
+      "tag": "0010_mesas_asientos",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1794962958426,
+      "tag": "0011_categoria_evento",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795022634271,
+      "tag": "0012_pagos_pagosya_sim",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1795036601325,
+      "tag": "0013_ficha_venue",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795042491415,
+      "tag": "0014_aceptacion_terminos",
+      "breakpoints": true
     }
   ]
 }
