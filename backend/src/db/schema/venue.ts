@@ -15,6 +15,7 @@ import {
 import { relations, sql } from 'drizzle-orm';
 import {
   eventStatusEnum,
+  seatingModeEnum,
   tierKindEnum,
   sectorTypeEnum,
   sectorViewEnum,
@@ -181,6 +182,8 @@ export const event = pgTable('event', {
   // Ruta relativa de la imagen en el disco del backend (NULL = sin imagen)
   imagePath: text('image_path'),
   status: eventStatusEnum('status').notNull().default('ACTIVO'),
+  // Cómo se ubica el público (ver seatingModeEnum). Solo cambia mientras no haya ventas.
+  seatingMode: seatingModeEnum('seating_mode').notNull().default('NINGUNO'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('event_venue_id_idx').on(table.venueId),

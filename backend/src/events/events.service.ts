@@ -9,17 +9,37 @@ import {
 import { and, asc, count, desc, eq, gt, inArray, lt, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
-import { courtesy, event, organizer, sector, ticket, tier, user, venue, venuePhoto } from '../db/index.js';
+import {
+  courtesy,
+  event,
+  organizer,
+  seat,
+  sector,
+  sectorTable,
+  ticket,
+  tier,
+  user,
+  venue,
+  venueElement,
+  venueLevel,
+  venuePhoto,
+} from '../db/index.js';
+import { LAYOUT_CANVAS } from '../venues/layout.constants.js';
 import { canManageOrganizer, type AuthUser } from '../auth/access.js';
 import type { CreateEventDto } from './dto/create-event.dto.js';
 import type { CreateTierDto } from './dto/create-tier.dto.js';
 import type { UpdateTierDto } from './dto/update-tier.dto.js';
 import type { UpdateEventDto } from './dto/update-event.dto.js';
 import type { IssueCourtesyDto } from './dto/issue-courtesy.dto.js';
+import type { SeatingModeDto } from './dto/seating-mode.dto.js';
+import type { AssignSeatsDto } from './dto/assign-seats.dto.js';
 import { AuditLogService } from '../audit/audit-log.service.js';
 import {
+  assignSeatsToTier,
   assignTicketsToTier,
   generateTicketsForEvent,
+  MAX_SEATS_PER_ORDER,
+  setSeatingMode,
   issueCourtesy,
   ticketCountsByTier,
 } from './inventory.js';
@@ -49,6 +69,126 @@ export class EventsService {
     return this.buildPublicEvent(found);
   }
 
+  // Mapa público de asientos de un evento con butacas: el plano (niveles, sectores, elementos)
+  // y cada asiento con su estado y precio. Nunca se dice QUIÉN ocupa un asiento.
+  //   LIBRE    → se puede elegir
+  //   OCUPADO  → reservado por otra compra en curso o ya vendido
+  //   NO_VENTA → sin precio asignado, pausado, fuera de ventana o reservado por el organizador
+  async getSeatMap(eventId: string) {
+    const [ev] = await this.db.select().from(event).where(eq(event.id, eventId)).limit(1);
+    if (!ev) throw new NotFoundException('Evento no encontrado');
+    if (ev.seatingMode !== 'BUTACAS') throw new BadRequestException('Este evento no vende por asiento');
+
+    const levels = await this.db
+      .select()
+      .from(venueLevel)
+      .where(eq(venueLevel.venueId, ev.venueId))
+      .orderBy(asc(venueLevel.position));
+    const sectors = await this.db
+      .select()
+      .from(sector)
+      .where(and(eq(sector.venueId, ev.venueId), eq(sector.sellable, true)));
+    const levelIds = levels.map((l) => l.id);
+    const elements = levelIds.length
+      ? await this.db.select().from(venueElement).where(inArray(venueElement.levelId, levelIds))
+      : [];
+    const tiers = await this.db.select().from(tier).where(and(eq(tier.eventId, ev.id), eq(tier.kind, 'VENTA')));
+    const tierById = new Map(tiers.map((t) => [t.id, t]));
+
+    const sectorIds = sectors.map((s) => s.id);
+    const rows = sectorIds.length
+      ? await this.db
+          .select({
+            seatId: seat.id,
+            sectorId: seat.sectorId,
+            rowLabel: seat.rowLabel,
+            label: seat.label,
+            x: seat.x,
+            y: seat.y,
+            tableId: seat.tableId,
+            tableLabel: sectorTable.label,
+            ticketStatus: ticket.status,
+            tierId: ticket.tierId,
+          })
+          .from(seat)
+          .leftJoin(sectorTable, eq(sectorTable.id, seat.tableId))
+          .leftJoin(ticket, and(eq(ticket.seatId, seat.id), eq(ticket.eventId, ev.id)))
+          .where(and(inArray(seat.sectorId, sectorIds), eq(seat.active, true)))
+      : [];
+
+    const now = new Date();
+    const seats = rows.map((r) => {
+      const t = r.tierId ? tierById.get(r.tierId) : undefined;
+      let status: 'LIBRE' | 'OCUPADO' | 'NO_VENTA';
+      if (r.ticketStatus === 'RESERVADO' || r.ticketStatus === 'VALIDO' || r.ticketStatus === 'UTILIZADO') {
+        status = 'OCUPADO';
+      } else if (
+        r.ticketStatus === 'DISPONIBLE' &&
+        t &&
+        !t.isPaused &&
+        (!t.startsAt || now >= t.startsAt) &&
+        (!t.endsAt || now < t.endsAt)
+      ) {
+        status = 'LIBRE';
+      } else {
+        status = 'NO_VENTA';
+      }
+      return {
+        id: r.seatId,
+        sectorId: r.sectorId,
+        tableId: r.tableId,
+        tableLabel: r.tableLabel,
+        rowLabel: r.rowLabel,
+        label: r.label,
+        x: r.x,
+        y: r.y,
+        status,
+        tierId: t?.id ?? null,
+        price: t?.price ?? null,
+      };
+    });
+
+    const tables = sectorIds.length
+      ? await this.db.select().from(sectorTable).where(inArray(sectorTable.sectorId, sectorIds))
+      : [];
+
+    return {
+      eventId: ev.id,
+      seatingMode: ev.seatingMode,
+      maxSeatsPerOrder: MAX_SEATS_PER_ORDER,
+      canvas: LAYOUT_CANVAS,
+      levels: levels.map((l) => ({
+        id: l.id,
+        name: l.name,
+        position: l.position,
+        sectors: sectors
+          .filter((s) => s.levelId === l.id)
+          .map((s) => ({
+            id: s.id,
+            name: s.name,
+            type: s.type,
+            view: s.view,
+            accessible: s.accessible,
+            color: s.color,
+            buyerText: s.buyerText,
+            x: s.x,
+            y: s.y,
+            w: s.w,
+            h: s.h,
+            points: s.points,
+          })),
+        elements: elements
+          .filter((e) => e.levelId === l.id)
+          .map((e) => ({ id: e.id, kind: e.kind, name: e.name, x: e.x, y: e.y, w: e.w, h: e.h })),
+      })),
+      tables: tables.map((t) => ({ id: t.id, sectorId: t.sectorId, label: t.label, x: t.x, y: t.y })),
+      tiers: tiers
+        .filter((t) => seats.some((s) => s.tierId === t.id))
+        .map((t) => ({ id: t.id, name: t.name, sectorId: t.sectorId, price: t.price })),
+      seats,
+    };
+  }
+
   // Árbol event → sectors → tiers (solo tiers de VENTA: las cortesías no se
   // muestran al público). La disponibilidad se DERIVA contando tickets
   // DISPONIBLE del tier; nunca se almacena.
@@ -59,6 +199,15 @@ export class EventsService {
       .where(and(eq(sector.venueId, eventRow.venueId), eq(sector.sellable, true)));
     const tiers = await this.db.select().from(tier).where(eq(tier.eventId, eventRow.id));
     const { byTier } = await ticketCountsByTier(this.db, eventRow.id);
+    // Tiers cuyos tickets llevan asiento: solo se compran eligiendo asientos en el mapa
+    const seatedTierRows =
+      eventRow.seatingMode === 'BUTACAS'
+        ? await this.db
+            .selectDistinct({ tierId: ticket.tierId })
+            .from(ticket)
+            .where(and(eq(ticket.eventId, eventRow.id), sql`${ticket.seatId} IS NOT NULL`))
+        : [];
+    const seatedTiers = new Set(seatedTierRows.map((r) => r.tierId));
     const [venueRow] = await this.db
       .select({ name: venue.name, address: venue.address, mapsUrl: venue.mapsUrl, openingHours: venue.openingHours })
       .from(venue)
@@ -90,6 +239,8 @@ export class EventsService {
               endsAt: t.endsAt,
               isPaused: t.isPaused,
               available,
+              // true = se compra eligiendo asientos en el mapa (GET /events/:id/seats), no por cantidad
+              bySeat: seatedTiers.has(t.id),
               disponibleParaCompra: !t.isPaused && inWindow && available > 0,
             };
           }),
@@ -479,6 +630,28 @@ export class EventsService {
     const result = await generateTicketsForEvent(this.db, eventId);
     await this.auditLog.log(actor.sub, 'TICKETS_GENERATED', 'Event', eventId, {
       created: result.created,
+      removed: result.removed,
+    });
+    return result;
+  }
+
+  async changeSeatingMode(eventId: string, dto: SeatingModeDto, actor: AuthUser) {
+    const ev = await this.getManagedEvent(eventId, actor);
+    const result = await setSeatingMode(this.db, eventId, dto.seatingMode);
+    await this.auditLog.log(actor.sub, 'EVENT_SEATING_MODE_CHANGED', 'Event', eventId, {
+      from: ev.seatingMode,
+      to: dto.seatingMode,
+      deletedTickets: result.deletedTickets,
+    });
+    return result;
+  }
+
+  async assignSeats(tierId: string, dto: AssignSeatsDto, actor: AuthUser) {
+    await this.getManagedTier(tierId, actor);
+    const result = await assignSeatsToTier(this.db, tierId, dto.seatIds, dto.release ?? false);
+    await this.auditLog.log(actor.sub, 'TIER_SEATS_ASSIGNED', 'Tier', tierId, {
+      seats: dto.seatIds.length,
+      release: dto.release ?? false,
     });
     return result;
   }

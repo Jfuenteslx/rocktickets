@@ -2,7 +2,8 @@ import { Inject, Injectable, Logger } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
-import { ticket, access, event, tier, sector, order, orderItem, courtesy } from '../db/index.js';
+import { ticket, access, event, tier, sector, seat, sectorTable, order, orderItem, courtesy } from '../db/index.js';
+import { seatLabelOrNull } from '../events/seat-label.js';
 import { canScanEvent, type AuthUser } from '../auth/access.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 
@@ -21,6 +22,8 @@ export interface ScanResult {
     eventName: string;
     tierName: string | null;
     sectorName: string;
+    // Asiento numerado ("Fila C · 12", "Mesa 4 · B"); null si la entrada no tiene asiento
+    seat: string | null;
     kind: 'VENTA' | 'CORTESIA' | null;
     holder: string | null;
     firstScannedAt: string | null;
@@ -79,6 +82,9 @@ export class TicketsService {
           tierName: string | null;
           tierKind: 'VENTA' | 'CORTESIA' | null;
           sectorName: string;
+          seatLabel: string | null;
+          rowLabel: string | null;
+          tableLabel: string | null;
           buyerName: string | null;
           recipientName: string | null;
           orderId: string | null;
@@ -94,6 +100,9 @@ export class TicketsService {
           tierName: tier.name,
           tierKind: tier.kind,
           sectorName: sector.name,
+          seatLabel: seat.label,
+          rowLabel: seat.rowLabel,
+          tableLabel: sectorTable.label,
           buyerName: order.buyerName,
           recipientName: courtesy.recipientName,
           orderId: order.id,
@@ -102,6 +111,8 @@ export class TicketsService {
         .from(ticket)
         .innerJoin(event, eq(event.id, ticket.eventId))
         .innerJoin(sector, eq(sector.id, ticket.sectorId))
+        .leftJoin(seat, eq(seat.id, ticket.seatId))
+        .leftJoin(sectorTable, eq(sectorTable.id, seat.tableId))
         .leftJoin(tier, eq(tier.id, ticket.tierId))
         .leftJoin(orderItem, eq(orderItem.id, ticket.orderItemId))
         .leftJoin(order, eq(order.id, orderItem.orderId))
@@ -195,6 +206,7 @@ export class TicketsService {
           eventName: info!.eventName,
           tierName: info!.tierName,
           sectorName: info!.sectorName,
+          seat: seatLabelOrNull(info!),
           kind: info!.tierKind,
           holder,
           firstScannedAt,

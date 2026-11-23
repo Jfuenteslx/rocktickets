@@ -8,10 +8,11 @@ import {
   check,
   foreignKey,
   primaryKey,
+  uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { relations, sql } from 'drizzle-orm';
 import { ticketStatusEnum, accessResultEnum } from './enums.js';
-import { event, sector, tier } from './venue.js';
+import { event, sector, seat, tier } from './venue.js';
 import { orderItem } from './commerce.js';
 import { user } from './identity.js';
 
@@ -40,6 +41,9 @@ export const ticket = pgTable('ticket', {
   sectorId: uuid('sector_id').notNull().references(() => sector.id),
   // NULL = sin tier: fuera de venta, reservado para el organizador
   tierId: uuid('tier_id'),
+  // Asiento del plano (modo BUTACAS). NULL = entrada sin asiento. Un ticket con asiento
+  // solo se vende eligiendo ese asiento, nunca por cantidad.
+  seatId: uuid('seat_id').references(() => seat.id),
   orderItemId: uuid('order_item_id').references(() => orderItem.id),
   courtesyId: uuid('courtesy_id').references(() => courtesy.id),
   // Legible para el staff; único dentro del evento
@@ -52,6 +56,10 @@ export const ticket = pgTable('ticket', {
   index('ticket_order_item_id_idx').on(table.orderItemId),
   index('ticket_courtesy_id_idx').on(table.courtesyId),
   unique('ticket_event_short_code_unique').on(table.eventId, table.shortCode),
+  // Un asiento tiene a lo sumo UN ticket por evento (también los ANULADOS cuentan:
+  // anular no libera el asiento físico). Es la garantía final contra doble venta.
+  uniqueIndex('ticket_event_seat_unique').on(table.eventId, table.seatId).where(sql`${table.seatId} IS NOT NULL`),
+  index('ticket_seat_id_idx').on(table.seatId),
   // El tier debe ser del mismo evento y sector que el ticket
   foreignKey({
     name: 'ticket_tier_coherence_fk',

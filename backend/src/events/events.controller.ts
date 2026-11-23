@@ -26,6 +26,8 @@ import { CreateTierDto } from './dto/create-tier.dto.js';
 import { UpdateTierDto } from './dto/update-tier.dto.js';
 import { SetTierPausedDto } from './dto/set-tier-paused.dto.js';
 import { AssignTicketsDto } from './dto/assign-tickets.dto.js';
+import { SeatingModeDto } from './dto/seating-mode.dto.js';
+import { AssignSeatsDto } from './dto/assign-seats.dto.js';
 import { IssueCourtesyDto } from './dto/issue-courtesy.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionGuard } from '../auth/guards/permission.guard.js';
@@ -52,6 +54,12 @@ export class EventsController {
   @Get('events/:id')
   getEvent(@Param('id', ParseUUIDPipe) id: string) {
     return this.eventsService.getEvent(id);
+  }
+
+  // Mapa de asientos para elegir ubicación (solo eventos con butacas)
+  @Get('events/:id/seats')
+  getSeatMap(@Param('id', ParseUUIDPipe) id: string) {
+    return this.eventsService.getSeatMap(id);
   }
 
   // --- events:manage ---
@@ -153,6 +161,17 @@ export class EventsController {
     return this.eventsService.generateTickets(id, req.user);
   }
 
+  @Patch('events/:id/seating-mode')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  changeSeatingMode(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SeatingModeDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.eventsService.changeSeatingMode(id, dto, req.user);
+  }
+
   @Get('events/:id/inventory')
   @UseGuards(JwtAuthGuard, PermissionGuard)
   @RequierePermiso('events:manage')
@@ -193,6 +212,17 @@ export class EventsController {
     @Req() req: RequestWithUser,
   ) {
     return this.eventsService.assignTickets(id, dto.quantity, req.user);
+  }
+
+  @Post('tiers/:id/assign-seats')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('tiers:manage')
+  assignSeats(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AssignSeatsDto,
+    @Req() req: RequestWithUser,
+  ) {
+    return this.eventsService.assignSeats(id, dto, req.user);
   }
 
   @Patch('tiers/:id/paused')

@@ -4,7 +4,8 @@ import QRCode from 'qrcode';
 import PDFDocument from 'pdfkit';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
-import { courtesy, event, order, orderItem, sector, ticket, tier, venue } from '../db/index.js';
+import { courtesy, event, order, orderItem, seat, sector, sectorTable, ticket, tier, venue } from '../db/index.js';
+import { seatLabelOrNull } from '../events/seat-label.js';
 
 // Estados que el comprador puede descargar: un ticket ANULADO no se entrega.
 const DELIVERABLE = ['VALIDO', 'UTILIZADO'] as const;
@@ -38,10 +39,15 @@ export class TicketDeliveryService {
         status: ticket.status,
         tierName: tier.name,
         sectorName: sector.name,
+        seatLabel: seat.label,
+        rowLabel: seat.rowLabel,
+        tableLabel: sectorTable.label,
       })
       .from(ticket)
       .innerJoin(tier, eq(ticket.tierId, tier.id))
       .innerJoin(sector, eq(ticket.sectorId, sector.id))
+      .leftJoin(seat, eq(seat.id, ticket.seatId))
+      .leftJoin(sectorTable, eq(sectorTable.id, seat.tableId))
       .where(
         and(
           inArray(ticket.orderItemId, items.map((i) => i.id)),
@@ -50,7 +56,11 @@ export class TicketDeliveryService {
       )
       .orderBy(ticket.shortCode);
 
-    const tickets = onlyTicketId ? rows.filter((r) => r.id === onlyTicketId) : rows;
+    const withSeat = rows.map(({ seatLabel: sl, rowLabel, tableLabel, ...t }) => ({
+      ...t,
+      seat: seatLabelOrNull({ seatLabel: sl, rowLabel, tableLabel }),
+    }));
+    const tickets = onlyTicketId ? withSeat.filter((r) => r.id === onlyTicketId) : withSeat;
     if (tickets.length === 0) throw new NotFoundException('Ticket no encontrado');
 
     const [ev] = await this.db.select().from(event).where(eq(event.id, foundOrder.eventId)).limit(1);
@@ -85,7 +95,9 @@ export class TicketDeliveryService {
       .where(and(eq(ticket.courtesyId, c.id), inArray(ticket.status, [...DELIVERABLE])))
       .orderBy(ticket.shortCode);
 
-    const tickets = onlyTicketId ? rows.filter((r) => r.id === onlyTicketId) : rows;
+    // Las cortesías se emiten por cantidad: no llevan asiento
+    const withSeat = rows.map((t) => ({ ...t, seat: null as string | null }));
+    const tickets = onlyTicketId ? withSeat.filter((r) => r.id === onlyTicketId) : withSeat;
     if (tickets.length === 0) throw new NotFoundException('Entrada no encontrada');
 
     const [ev] = await this.db.select().from(event).where(eq(event.id, c.eventId)).limit(1);
@@ -141,7 +153,7 @@ export class TicketDeliveryService {
   private async buildPdf(d: {
     event: typeof event.$inferSelect;
     venue: typeof venue.$inferSelect;
-    tickets: { id: string; shortCode: string; tierName: string; sectorName: string }[];
+    tickets: { id: string; shortCode: string; tierName: string; sectorName: string; seat: string | null }[];
     holder: string;
     reference: string;
   }): Promise<Buffer> {
@@ -176,7 +188,11 @@ export class TicketDeliveryService {
       doc.fillColor('#18181b').font('Courier-Bold').fontSize(22).text(t.shortCode, { align: 'center' });
       doc.moveDown(0.2).font('Helvetica').fontSize(11).fillColor('#3f3f46')
         .text(`${t.sectorName} · ${t.tierName}`, { align: 'center' });
-      doc.moveDown(0.2).fontSize(9).fillColor('#71717a')
+      if (t.seat) {
+        // Asiento numerado: lo que el comprador necesita para ubicarse
+        doc.moveDown(0.2).font('Helvetica-Bold').fontSize(14).fillColor('#18181b').text(t.seat, { align: 'center' });
+      }
+      doc.moveDown(0.2).font('Helvetica').fontSize(9).fillColor('#71717a')
         .text(`Ticket ${i + 1} de ${tickets.length} · ${d.reference} · ${d.holder}`, { align: 'center' });
 
       doc.fontSize(8).fillColor('#a1a1aa').text(

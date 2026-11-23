@@ -3,6 +3,18 @@ import { pgEnum } from 'drizzle-orm/pg-core';
 // Event: ACTIVO → CANCELADO (cancelación manual, dispara anulación de tickets)
 export const eventStatusEnum = pgEnum('event_status', ['ACTIVO', 'CANCELADO']);
 
+// Cómo se ubica el público en un evento (uno solo por evento):
+//  - NINGUNO: entradas por sector/tier, sin ubicación concreta (flujo original).
+//  - BUTACAS: cada entrada va ligada a un asiento numerado del plano.
+//  - MESAS_FIJAS: paquetes de mesa definidos de antemano (el comprador elige la mesa).
+//  - MESAS_FLEXIBLES: el comprador indica cuántas personas son y el sistema acomoda.
+export const seatingModeEnum = pgEnum('seating_mode', [
+  'NINGUNO',
+  'BUTACAS',
+  'MESAS_FIJAS',
+  'MESAS_FLEXIBLES',
+]);
+
 // User (panel y puerta; el comprador registrado será otra tabla, más adelante):
 //  - SUPERADMIN: Rocktickets. Control total, sin organizador.
 //  - ORGANIZADOR: administrador de un organizador externo; solo ve y toca lo suyo.

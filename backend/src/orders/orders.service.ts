@@ -1,10 +1,12 @@
-import { BadRequestException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
-import { event, sector, tier, order, orderItem, payment, ticket, venue } from '../db/index.js';
+import { event, sector, seat, sectorTable, tier, order, orderItem, payment, ticket, venue } from '../db/index.js';
+import { MAX_SEATS_PER_ORDER } from '../events/inventory.js';
+import { seatLabel } from '../events/seat-label.js';
 import type { CreateOrderDto } from './dto/create-order.dto.js';
 import { CheckoutService } from '../payments/checkout.service.js';
 import { TERMS_VERSION } from './terms.js';
@@ -33,21 +35,56 @@ export class OrdersService {
     // Una línea por tier: si el comprador repite un tier se suman las cantidades
     // (OrderItem es UNIQUE(order_id, tier_id)).
     const wanted = new Map<string, number>();
-    for (const item of dto.items) {
+    for (const item of dto.items ?? []) {
       wanted.set(item.tierId, (wanted.get(item.tierId) ?? 0) + item.quantity);
+    }
+    const seatIds = [...new Set(dto.seatIds ?? [])];
+
+    if (wanted.size === 0 && seatIds.length === 0) {
+      throw new BadRequestException('Elige al menos una entrada');
+    }
+    if (seatIds.length > MAX_SEATS_PER_ORDER) {
+      throw new BadRequestException(`Puedes elegir hasta ${MAX_SEATS_PER_ORDER} asientos por compra`);
+    }
+    if (seatIds.length > 0 && eventRow.seatingMode !== 'BUTACAS') {
+      throw new BadRequestException('Este evento no vende por asiento');
     }
 
     // Toda la reserva es una única transacción: si cualquier línea falla,
     // ninguna queda reservada (invariante: no hay orden parcialmente reservada).
     return this.db.transaction(async (tx) => {
-      const reservedItems: {
-        tierId: string;
-        quantity: number;
-        unitPrice: string;
-        ticketIds: string[];
-      }[] = [];
+      // Asientos elegidos: de ahí sale a qué tiers pertenecen (y, para los mensajes, su etiqueta)
+      const seatRows =
+        seatIds.length > 0
+          ? await tx
+              .select({
+                ticketId: ticket.id,
+                seatId: ticket.seatId,
+                tierId: ticket.tierId,
+                rowLabel: seat.rowLabel,
+                label: seat.label,
+                tableLabel: sectorTable.label,
+              })
+              .from(ticket)
+              .innerJoin(seat, eq(seat.id, ticket.seatId))
+              .leftJoin(sectorTable, eq(sectorTable.id, seat.tableId))
+              .where(and(eq(ticket.eventId, dto.eventId), inArray(ticket.seatId, seatIds)))
+          : [];
+      if (seatRows.length !== seatIds.length) {
+        throw new BadRequestException('Algún asiento no existe en este evento');
+      }
 
-      for (const [tierId, quantity] of wanted) {
+      // Se bloquean TODOS los tiers involucrados en orden de id: dos compras simultáneas
+      // nunca se esperan en círculo. Luego se bloquean los tickets (mismo orden en todo el código).
+      const tierIds = [
+        ...new Set([
+          ...wanted.keys(),
+          ...seatRows.map((r) => r.tierId).filter((id): id is string => id !== null),
+        ]),
+      ].sort();
+
+      const tiersById = new Map<string, typeof tier.$inferSelect>();
+      for (const tierId of tierIds) {
         // FOR UPDATE sobre el tier: serializa a los compradores del mismo
         // tier (y también a "asignar" y "emitir cortesía"), de modo que dos
         // compras simultáneas nunca elijan los mismos tickets.
@@ -71,12 +108,20 @@ export class OrdersService {
         ) {
           throw new BadRequestException(`El tier "${t.name}" no está disponible para compra`);
         }
+        tiersById.set(tierId, t);
+      }
 
-        // El stock ES el conjunto de tickets DISPONIBLE del tier.
+      const reserved = new Map<string, string[]>(); // tierId → tickets elegidos
+
+      for (const [tierId, quantity] of wanted) {
+        const t = tiersById.get(tierId)!;
+
+        // El stock ES el conjunto de tickets DISPONIBLE del tier. Los tickets con asiento
+        // quedan fuera: solo se venden eligiendo ese asiento.
         const available = await tx
           .select({ id: ticket.id })
           .from(ticket)
-          .where(and(eq(ticket.tierId, tierId), eq(ticket.status, 'DISPONIBLE')))
+          .where(and(eq(ticket.tierId, tierId), eq(ticket.status, 'DISPONIBLE'), sql`${ticket.seatId} IS NULL`))
           .orderBy(ticket.shortCode)
           .limit(quantity)
           .for('update');
@@ -85,19 +130,44 @@ export class OrdersService {
           const [{ n }] = await tx
             .select({ n: sql<number>`count(*)::int` })
             .from(ticket)
-            .where(and(eq(ticket.tierId, tierId), eq(ticket.status, 'DISPONIBLE')));
+            .where(and(eq(ticket.tierId, tierId), eq(ticket.status, 'DISPONIBLE'), sql`${ticket.seatId} IS NULL`));
           throw new BadRequestException(
             `Stock insuficiente para "${t.name}": quedan ${n}, se pidieron ${quantity}`,
           );
         }
-
-        reservedItems.push({
-          tierId,
-          quantity,
-          unitPrice: t.price, // precio congelado al momento de la reserva
-          ticketIds: available.map((a) => a.id),
-        });
+        reserved.set(tierId, available.map((a) => a.id));
       }
+
+      if (seatRows.length > 0) {
+        // Bloqueo de los tickets de los asientos elegidos (orden por id) y verificación bajo bloqueo
+        const locked = await tx
+          .select({ id: ticket.id, seatId: ticket.seatId, status: ticket.status, tierId: ticket.tierId })
+          .from(ticket)
+          .where(inArray(ticket.id, seatRows.map((r) => r.ticketId)))
+          .orderBy(ticket.id)
+          .for('update');
+
+        const labelBySeat = new Map(seatRows.map((r) => [r.seatId, seatLabel(r)]));
+        const unavailable = locked.filter(
+          (r) => r.status !== 'DISPONIBLE' || r.tierId === null || !tiersById.has(r.tierId),
+        );
+        if (unavailable.length > 0) {
+          throw new ConflictException({
+            message: `Ya no están disponibles: ${unavailable.map((r) => labelBySeat.get(r.seatId)).join(', ')}`,
+            unavailableSeatIds: unavailable.map((r) => r.seatId),
+          });
+        }
+        for (const r of locked) {
+          reserved.set(r.tierId!, [...(reserved.get(r.tierId!) ?? []), r.id]);
+        }
+      }
+
+      const reservedItems = [...reserved].map(([tierId, ticketIds]) => ({
+        tierId,
+        quantity: ticketIds.length,
+        unitPrice: tiersById.get(tierId)!.price, // precio congelado al momento de la reserva
+        ticketIds,
+      }));
 
       const totalAmount = reservedItems
         .reduce((sum, i) => sum + Number(i.unitPrice) * i.quantity, 0)
