@@ -8,7 +8,7 @@ import { EventPoster } from "../components/EventCard";
 import VenueSection from "../components/VenueSection";
 import GoogleButton from "../components/GoogleButton";
 import { GOOGLE_ENABLED, useBuyer } from "../lib/buyerAuth";
-import { ErrorBox, Loading } from "../components/StateMessage";
+import { ErrorBox, LoadError, Loading } from "../components/StateMessage";
 
 const MAX_PER_TIER = 10;
 
@@ -47,7 +47,8 @@ export default function EventDetail() {
 
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState("");
+  const [loadError, setLoadError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
   const [cart, setCart] = useState({}); // { tierId: cantidad }
   const [buyer, setBuyer] = useState({ name: "", email: "", phone: "" });
   const [accepted, setAccepted] = useState(false);
@@ -63,12 +64,24 @@ export default function EventDetail() {
     api
       .get(`/events/${id}`)
       .then(({ data }) => setEvent(data))
-      .catch(() => setLoadError("No encontramos este evento."))
+      .catch((err) => setLoadError(err))
       .finally(() => setLoading(false));
-  }, [id]);
+  }, [id, attempt]);
 
   if (loading) return <Loading text="Cargando evento…" />;
-  if (loadError || !event) return <ErrorBox>{loadError || "Evento no encontrado"}</ErrorBox>;
+  if (loadError)
+    return (
+      <LoadError
+        error={loadError}
+        notFoundText="No encontramos este evento."
+        onRetry={() => {
+          setLoadError(null);
+          setLoading(true);
+          setAttempt((n) => n + 1);
+        }}
+      />
+    );
+  if (!event) return <ErrorBox>No encontramos este evento.</ErrorBox>;
 
   const allTiers = event.sectors.flatMap((s) => s.tiers.map((t) => ({ ...t, sectorName: s.name })));
   const cartItems = Object.entries(cart)

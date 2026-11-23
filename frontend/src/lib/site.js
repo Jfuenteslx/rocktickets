@@ -4,8 +4,8 @@ export const SITE = {
   name: "Rocktickets",
   instagram: "", // ej. "https://instagram.com/rocktickets"
   facebook: "", // ej. "https://facebook.com/rocktickets"
-  whatsapp: "", // ej. "https://wa.me/59170000000"
-  email: "", // ej. "soporte@rocktickets.com"
+  whatsapp: "https://wa.me/59169710069",
+  email: "", // pendiente: usar el correo del dominio propio (ej. "soporte@tudominio.com")
 };
 
 export const RESERVATION_MINUTES = 15;

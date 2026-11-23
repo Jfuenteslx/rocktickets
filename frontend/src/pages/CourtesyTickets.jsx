@@ -3,22 +3,33 @@ import { useParams } from "react-router-dom";
 import api, { API_URL } from "../lib/api";
 import { formatDayLong, formatTime } from "../lib/events";
 import TicketCard from "../components/TicketCard";
-import { ErrorBox, Loading } from "../components/StateMessage";
+import { LoadError, Loading } from "../components/StateMessage";
 
 // Página pública de una cortesía: el invitado abre su enlace y descarga sus entradas.
 export default function CourtesyTickets() {
   const { token } = useParams();
   const [data, setData] = useState(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     api
       .get(`/courtesies/token/${token}`)
       .then(({ data }) => setData(data))
-      .catch(() => setError("No encontramos estas entradas. Revisa que el enlace esté completo."));
-  }, [token]);
+      .catch((err) => setError(err));
+  }, [token, attempt]);
 
-  if (error) return <ErrorBox>{error}</ErrorBox>;
+  if (error)
+    return (
+      <LoadError
+        error={error}
+        notFoundText="No encontramos estas entradas. Revisa que el enlace esté completo."
+        onRetry={() => {
+          setError(null);
+          setAttempt((n) => n + 1);
+        }}
+      />
+    );
   if (!data) return <Loading />;
 
   const { event, tickets } = data;

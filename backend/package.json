@@ -46,6 +46,7 @@
     "drizzle-orm": "^0.45.3",
     "express-formidable": "^1.2.0",
     "express-session": "^1.19.0",
+    "google-auth-library": "^11.3.4",
     "ioredis": "^6.0.0",
     "multer": "^2.4.0",
     "pdfkit": "^0.20.2",

@@ -1,23 +1,31 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import api, { API_URL } from "../lib/api";
 import useCountdown, { formatCountdown } from "../lib/useCountdown";
 import { formatDayLong, formatMoney, formatTime } from "../lib/events";
 import TicketCard from "../components/TicketCard";
 import PaymentPanel from "../components/PaymentPanel";
-import { ErrorBox, Loading } from "../components/StateMessage";
+import { LoadError, Loading } from "../components/StateMessage";
 
 export default function OrderStatus() {
   const { token } = useParams();
   const [order, setOrder] = useState(null);
-  const [error, setError] = useState("");
+  const [error, setError] = useState(null);
+  const loaded = useRef(false);
 
   const load = useCallback(
     () =>
       api
         .get(`/orders/token/${token}`)
-        .then(({ data }) => setOrder(data))
-        .catch(() => setError("No encontramos esta compra. Revisa que el enlace esté completo.")),
+        .then(({ data }) => {
+          loaded.current = true;
+          setError(null);
+          setOrder(data);
+        })
+        .catch((err) => {
+          // Un fallo pasajero mientras se consulta el pago no debe tapar la compra ya cargada.
+          if (!loaded.current) setError(err);
+        }),
     [token],
   );
 
@@ -35,7 +43,17 @@ export default function OrderStatus() {
 
   const secondsLeft = useCountdown(pending ? order.expiresAt : null);
 
-  if (error) return <ErrorBox>{error}</ErrorBox>;
+  if (error)
+    return (
+      <LoadError
+        error={error}
+        notFoundText="No encontramos esta compra. Revisa que el enlace esté completo."
+        onRetry={() => {
+          setError(null);
+          load();
+        }}
+      />
+    );
   if (!order) return <Loading />;
 
   return (
