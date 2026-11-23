@@ -9,6 +9,7 @@ import { TicketGlyph } from "../components/Logo.jsx";
 
 const TABS = [
   { to: "", label: "Entradas", end: true },
+  { to: "ubicacion", label: "Ubicación" },
   { to: "ventas", label: "Ventas" },
   { to: "cortesias", label: "Cortesías" },
   { to: "puerta", label: "Puerta" },

@@ -4,6 +4,7 @@ import api, { API_URL } from "../lib/api";
 import useCountdown, { formatCountdown } from "../lib/useCountdown";
 import { formatDayLong, formatMoney, formatTime } from "../lib/events";
 import TicketCard from "../components/TicketCard";
+import TableVoucher from "../components/TableVoucher";
 import PaymentPanel from "../components/PaymentPanel";
 import { LoadError, Loading } from "../components/StateMessage";
 
@@ -86,6 +87,8 @@ export default function OrderStatus() {
         </div>
       )}
 
+      {pending && <TableVoucher order={order} confirmed={false} />}
+
       {pending && <PaymentPanel token={token} order={order} onOrder={setOrder} />}
 
       {order.status === "EXPIRADA" && (
@@ -110,6 +113,8 @@ export default function OrderStatus() {
           <div className="rounded-xl border border-emerald-700/60 bg-emerald-950/30 p-4">
             <p className="font-semibold text-emerald-300">¡Pago confirmado! Tus entradas están listas.</p>
           </div>
+
+          <TableVoucher order={order} confirmed />
 
           <div className="mb-4 mt-8 flex items-center justify-between gap-3">
             <h2 className="section-title">Tus tickets ({order.tickets.length})</h2>

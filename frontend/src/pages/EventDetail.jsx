@@ -6,6 +6,9 @@ import { RESERVATION_MINUTES } from "../lib/site";
 import { formatDayLong, formatMoney, formatTime, saleInfo, STATE_BADGE } from "../lib/events";
 import { EventPoster } from "../components/EventCard";
 import VenueSection from "../components/VenueSection";
+import SeatPicker from "../components/SeatPicker";
+import TablePicker from "../components/TablePicker";
+import TableRequest from "../components/TableRequest";
 import GoogleButton from "../components/GoogleButton";
 import { GOOGLE_ENABLED, useBuyer } from "../lib/buyerAuth";
 import { ErrorBox, LoadError, Loading } from "../components/StateMessage";
@@ -50,6 +53,10 @@ export default function EventDetail() {
   const [loadError, setLoadError] = useState(null);
   const [attempt, setAttempt] = useState(0);
   const [cart, setCart] = useState({}); // { tierId: cantidad }
+  const [seats, setSeats] = useState([]); // asientos elegidos en el plano
+  const [tables, setTables] = useState([]); // mesas fijas elegidas en el plano
+  const [mapKey, setMapKey] = useState(0);
+  const [tableRequest, setTableRequest] = useState(null); // mesas flexibles: { sectorId, people }
   const [buyer, setBuyer] = useState({ name: "", email: "", phone: "" });
   const [accepted, setAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -83,12 +90,23 @@ export default function EventDetail() {
     );
   if (!event) return <ErrorBox>No encontramos este evento.</ErrorBox>;
 
-  const allTiers = event.sectors.flatMap((s) => s.tiers.map((t) => ({ ...t, sectorName: s.name })));
+  const allTiers = event.sectors.flatMap((s) => s.tiers.map((t) => ({ ...t, sectorName: s.name, sectorId: s.id })));
   const cartItems = Object.entries(cart)
     .map(([tierId, quantity]) => ({ tierId, quantity, tier: allTiers.find((t) => t.id === tierId) }))
     .filter((i) => i.tier);
-  const total = cartItems.reduce((sum, i) => sum + Number(i.tier.price) * i.quantity, 0);
-  const count = cartItems.reduce((sum, i) => sum + i.quantity, 0);
+  const bySeatMode = event.seatingMode === "BUTACAS";
+  const byTableMode = event.seatingMode === "MESAS_FIJAS";
+  const flexMode = event.seatingMode === "MESAS_FLEXIBLES";
+  // entradas elegidas por sector: de ahí sale cuántas personas pueden pedir mesa
+  const flexSectors = event.sectors
+    .map((s) => ({ id: s.id, name: s.name, tickets: cartItems.filter((i) => i.tier.sectorId === s.id).reduce((n, i) => n + i.quantity, 0) }))
+    .filter((s) => s.tickets > 0);
+  const total =
+    cartItems.reduce((sum, i) => sum + Number(i.tier.price) * i.quantity, 0) +
+    seats.reduce((sum, s) => sum + Number(s.price), 0) +
+    tables.reduce((sum, t) => sum + Number(t.price), 0);
+  // "count" cuenta tickets: cada persona de una mesa lleva el suyo
+  const count = cartItems.reduce((sum, i) => sum + i.quantity, 0) + seats.length + tables.reduce((sum, t) => sum + t.people, 0);
   const { state } = saleInfo(event);
   const badge = STATE_BADGE[state];
   const ended = new Date(event.endsAt) <= new Date();
@@ -104,7 +122,7 @@ export default function EventDetail() {
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (cartItems.length === 0) {
+    if (count === 0) {
       setError("Elige al menos una entrada.");
       return;
     }
@@ -117,12 +135,31 @@ export default function EventDetail() {
         buyerEmail: buyer.email.trim(),
         buyerPhone: buyer.phone.trim(),
         acceptTerms: true,
-        items: cartItems.map((i) => ({ tierId: i.tierId, quantity: i.quantity })),
+        ...(cartItems.length > 0 && { items: cartItems.map((i) => ({ tierId: i.tierId, quantity: i.quantity })) }),
+        ...(seats.length > 0 && { seatIds: seats.map((s) => s.id) }),
+        ...(tables.length > 0 && { tables: tables.map((t) => ({ tableId: t.id })) }),
+        ...(flexMode && tableRequest && { tableRequest: { sectorId: tableRequest.sectorId, people: tableRequest.people } }),
       });
       navigate(`/orden/${data.order.accessToken}`);
     } catch (err) {
       const msg = err.response?.data?.message;
+      const gone = err.response?.data?.unavailableSeatIds;
+      const goneTables = err.response?.data?.unavailableTableIds;
+      if (err.response?.data?.noTableAvailable) {
+        setTableRequest(null);
+        setMapKey((k) => k + 1);
+      }
+      if (Array.isArray(goneTables) && goneTables.length > 0) {
+        setTables((cur) => cur.filter((t) => !goneTables.includes(t.id)));
+        setMapKey((k) => k + 1);
+      }
+      if (Array.isArray(gone) && gone.length > 0) {
+        // alguien se llevó esos asientos: se sueltan y se recarga el plano
+        setSeats((cur) => cur.filter((s) => !gone.includes(s.id)));
+        setMapKey((k) => k + 1);
+      }
       setError(Array.isArray(msg) ? msg.join(" ") : msg || "No se pudo completar la compra. Intenta de nuevo.");
+      if (err.response?.data?.noTableAvailable) setError((m) => `${m} Quitamos la reserva de mesa: puedes continuar solo con las entradas.`);
     } finally {
       setSubmitting(false);
     }
@@ -168,6 +205,29 @@ export default function EventDetail() {
             </div>
           )}
 
+          {bySeatMode && !ended && (
+            <section id="asientos" className="mt-8" aria-labelledby="asientos-titulo">
+              <h2 id="asientos-titulo" className="section-title">Elige tu asiento</h2>
+              <p className="mt-2 text-sm text-zinc-400">Toca los asientos libres del plano. Puedes elegir varios y pagas todo junto.</p>
+              <div className="mt-4">
+                <SeatPicker eventId={id} selected={seats} onChange={setSeats} refreshKey={mapKey} />
+              </div>
+            </section>
+          )}
+
+          {byTableMode && !ended && (
+            <section id="asientos" className="mt-8" aria-labelledby="mesas-titulo">
+              <h2 id="mesas-titulo" className="section-title">Elige tu mesa</h2>
+              <p className="mt-2 text-sm text-zinc-400">
+                Cada mesa se reserva completa con su paquete, que incluye las entradas de todos los que van.
+                Tu mesa se guarda hasta las {event.tableValidUntil ?? "23:00"}; pasada esa hora se libera para el local, y tus entradas siguen valiendo.
+              </p>
+              <div className="mt-4">
+                <TablePicker eventId={id} selected={tables} onChange={setTables} refreshKey={mapKey} />
+              </div>
+            </section>
+          )}
+
           <VenueSection venue={event.venue} />
         </div>
 
@@ -197,17 +257,21 @@ export default function EventDetail() {
                         </div>
                         {note ? (
                           <span className="shrink-0 text-xs font-semibold uppercase text-zinc-500">{note}</span>
+                        ) : t.bySeat ? (
+                          <a href="#asientos" className="shrink-0 text-xs font-semibold uppercase text-brand hover:underline">
+                            {byTableMode ? "Elige tu mesa" : "Elige en el plano"}
+                          </a>
                         ) : (
                           <Stepper value={qty} max={max} onChange={(n) => setQty(t.id, n)} label={`Cantidad de ${t.name}`} />
                         )}
                       </div>
-                      {!note && t.available <= 20 && <p className="mt-2 text-xs text-amber-400">Quedan {t.available}</p>}
+                      {!note && !t.bySeat && t.available <= 20 && <p className="mt-2 text-xs text-amber-400">Quedan {t.available}</p>}
                     </div>
                   );
                 })}
             </div>
 
-            {cartItems.length > 0 && (
+            {count > 0 && (
               <form onSubmit={handleSubmit} className="mt-5 border-t border-line pt-5">
                 <ul className="space-y-1 text-sm text-zinc-400">
                   {cartItems.map((i) => (
@@ -218,7 +282,34 @@ export default function EventDetail() {
                       <span>{formatMoney(Number(i.tier.price) * i.quantity)}</span>
                     </li>
                   ))}
+                  {tables.map((t) => (
+                    <li key={t.id} className="flex items-start justify-between gap-2">
+                      <span className="min-w-0">
+                        Mesa {t.label} · {t.packageName}
+                        <span className="block text-xs text-zinc-500">{t.people} personas{t.bottle ? ` · botella incluida: ${t.bottle}` : ""}</span>
+                      </span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {formatMoney(t.price)}
+                        <button type="button" onClick={() => setTables((cur) => cur.filter((x) => x.id !== t.id))} aria-label={`Quitar mesa ${t.label}`} className="text-zinc-500 hover:text-white">✕</button>
+                      </span>
+                    </li>
+                  ))}
+                  {seats.map((s) => (
+                    <li key={s.id} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">{s.label}</span>
+                      <span className="flex shrink-0 items-center gap-2">
+                        {formatMoney(s.price)}
+                        <button type="button" onClick={() => setSeats((cur) => cur.filter((x) => x.id !== s.id))} aria-label={`Quitar ${s.label}`} className="text-zinc-500 hover:text-white">✕</button>
+                      </span>
+                    </li>
+                  ))}
                 </ul>
+                {flexMode && (
+                  <TableRequest
+                    eventId={id} sectors={flexSectors} validUntil={event.tableValidUntil}
+                    value={flexSectors.length ? tableRequest : null} onChange={setTableRequest} refreshKey={mapKey}
+                  />
+                )}
                 <p className="mt-3 flex justify-between text-lg font-semibold text-white">
                   <span>Total ({count})</span>
                   <span>{formatMoney(total)}</span>
@@ -317,7 +408,7 @@ export default function EventDetail() {
                 <p className="mt-3 text-center text-xs text-zinc-500">Reservamos tus entradas por {RESERVATION_MINUTES} minutos.</p>
               </form>
             )}
-            {cartItems.length === 0 && error && (
+            {count === 0 && error && (
               <p role="alert" className="mt-3 text-sm text-red-400">
                 {error}
               </p>

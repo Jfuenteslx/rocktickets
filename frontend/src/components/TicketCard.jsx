@@ -25,7 +25,7 @@ async function downloadTicketPng({ qrPath, ticket, event }) {
   });
 
   const W = 800;
-  const H = 1100;
+  const H = 1160;
   const c = document.createElement("canvas");
   c.width = W;
   c.height = H;
@@ -54,16 +54,25 @@ async function downloadTicketPng({ qrPath, ticket, event }) {
   g.drawImage(img, (W - qr) / 2, 290, qr, qr);
 
   g.fillStyle = "#18181b";
-  g.font = "bold 64px monospace";
-  g.fillText(ticket.shortCode, W / 2, 960);
+  g.font = "bold 56px monospace";
+  g.fillText(ticket.shortCode, W / 2, 920);
 
+  // Sector y asiento bien visibles
+  g.font = "bold 36px sans-serif";
+  g.fillText(`Sector: ${ticket.sectorName}`, W / 2, 978, W - 80);
+  let y = 1022;
+  if (ticket.seat) {
+    g.fillStyle = "#dc2626";
+    g.fillText(`Asiento: ${ticket.seat}`, W / 2, y, W - 80);
+    y += 40;
+  }
   g.fillStyle = "#3f3f46";
-  g.font = "28px sans-serif";
-  g.fillText(`${ticket.sectorName} · ${ticket.tierName}`, W / 2, 1010, W - 80);
+  g.font = "26px sans-serif";
+  g.fillText(ticket.tierName, W / 2, y, W - 80);
 
   g.fillStyle = "#a1a1aa";
   g.font = "20px sans-serif";
-  g.fillText("Presenta este QR en la puerta. Un solo uso.", W / 2, 1060);
+  g.fillText("Presenta este QR en la puerta. Un solo uso.", W / 2, 1126);
 
   URL.revokeObjectURL(url);
   const out = await new Promise((r) => c.toBlob(r, "image/png"));
@@ -107,6 +116,7 @@ export default function TicketCard({ token, ticket, event, basePath = "/orders/t
           <p className="text-sm text-zinc-400">
             {ticket.sectorName} · {ticket.tierName}
           </p>
+          {ticket.seat && <p className="text-sm font-semibold text-white">{ticket.seat}</p>}
           <span
             className={`mt-1 inline-block rounded-full px-2 py-0.5 text-xs font-semibold ${
               used ? "bg-zinc-700 text-zinc-300" : "bg-emerald-900/60 text-emerald-300"

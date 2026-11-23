@@ -6,6 +6,7 @@ import Events from "./pages/Events.jsx";
 import EventForm from "./pages/EventForm.jsx";
 import EventShell from "./pages/EventShell.jsx";
 import EventTiers from "./pages/EventTiers.jsx";
+import EventSeating from "./pages/EventSeating.jsx";
 import EventCourtesies from "./pages/EventCourtesies.jsx";
 import EventDetails from "./pages/EventDetails.jsx";
 import EventDoor from "./pages/EventDoor.jsx";
@@ -44,6 +45,7 @@ export default function App() {
             <Route path="/eventos/:id/editar" element={<EventForm />} />
             <Route path="/eventos/:id" element={<EventShell />}>
               <Route index element={<EventTiers />} />
+              <Route path="ubicacion" element={<EventSeating />} />
               <Route path="cortesias" element={<EventCourtesies />} />
               <Route path="ventas" element={<EventSales />} />
               <Route path="puerta" element={<EventDoor />} />

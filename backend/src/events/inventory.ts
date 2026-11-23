@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, NotFoundException } from '@nestjs/common';
 import { and, eq, inArray, sql } from 'drizzle-orm';
 import type { Database } from '../db/client.js';
-import { courtesy, event, seat, sector, ticket, tier } from '../db/index.js';
+import { courtesy, event, eventTable, eventTableBlock, seat, sector, ticket, tier } from '../db/index.js';
 
 // Lógica de inventario en funciones puras sobre `db`, SIN depender de Nest:
 // la usan tanto la API (EventsService) como el panel AdminJS, que vive
@@ -60,7 +60,7 @@ export async function generateTicketsForEvent(db: Database, eventId: string): Pr
       .where(eq(ticket.eventId, eventId));
 
     // Modo BUTACAS: un ticket por asiento activo (los sectores sin asientos siguen por aforo).
-    const bySeatMode = ev.seatingMode === 'BUTACAS';
+    const bySeatMode = ev.seatingMode === 'BUTACAS' || ev.seatingMode === 'MESAS_FIJAS';
     const seatRows = bySeatMode
       ? await tx
           .select({ id: seat.id, sectorId: seat.sectorId, active: seat.active })
@@ -281,9 +281,6 @@ export async function setSeatingMode(
   eventId: string,
   mode: (typeof event.$inferSelect)['seatingMode'],
 ): Promise<{ seatingMode: string; deletedTickets: number }> {
-  if (mode === 'MESAS_FIJAS' || mode === 'MESAS_FLEXIBLES') {
-    throw new BadRequestException('Este modo todavía no está disponible');
-  }
   return db.transaction(async (tx) => {
     const [ev] = await tx.select().from(event).where(eq(event.id, eventId)).for('update').limit(1);
     if (!ev) throw new NotFoundException('Evento no encontrado');
@@ -304,6 +301,9 @@ export async function setSeatingMode(
       .delete(ticket)
       .where(and(eq(ticket.eventId, eventId), eq(ticket.status, 'DISPONIBLE')))
       .returning({ id: ticket.id });
+    // Las asignaciones de paquetes a mesas solo tienen sentido en MESAS_FIJAS
+    await tx.delete(eventTable).where(eq(eventTable.eventId, eventId));
+    await tx.delete(eventTableBlock).where(eq(eventTableBlock.eventId, eventId));
     await tx.update(event).set({ seatingMode: mode }).where(eq(event.id, eventId));
     return { seatingMode: mode, deletedTickets: removed.length };
   });

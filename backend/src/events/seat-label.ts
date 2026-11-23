@@ -6,3 +6,12 @@ export function seatLabel(s: { tableLabel?: string | null; rowLabel?: string | n
   if (s.rowLabel) return `Fila ${s.rowLabel} · ${s.label}`;
   return s.label;
 }
+
+// Igual que seatLabel, pero devuelve null si el ticket no tiene asiento (columnas del LEFT JOIN vacías)
+export function seatLabelOrNull(r: {
+  seatLabel: string | null;
+  rowLabel: string | null;
+  tableLabel: string | null;
+}): string | null {
+  return r.seatLabel === null ? null : seatLabel({ tableLabel: r.tableLabel, rowLabel: r.rowLabel, label: r.seatLabel });
+}

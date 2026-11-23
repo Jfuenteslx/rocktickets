@@ -4,6 +4,9 @@ import {
   IsArray,
   Equals,
   IsEmail,
+  IsInt,
+  Max,
+  Min,
   IsOptional,
   IsString,
   IsUUID,
@@ -12,6 +15,23 @@ import {
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { OrderItemDto } from './order-item.dto.js';
+
+// Mesa fija elegida en el plano (se compra completa, con su paquete)
+export class OrderTableDto {
+  @IsUUID()
+  tableId!: string;
+}
+
+// Reserva de mesa por grupo (mesas flexibles): el sistema elige la mesa dentro del sector
+export class TableRequestDto {
+  @IsUUID()
+  sectorId!: string;
+
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  people!: number;
+}
 
 export class CreateOrderDto {
   @IsUUID()
@@ -47,4 +67,19 @@ export class CreateOrderDto {
   @ArrayMaxSize(10)
   @IsUUID('all', { each: true })
   seatIds?: string[];
+
+  // Mesas completas (eventos con mesas fijas). Se compran con su paquete: todos los asientos juntos.
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(3)
+  @ValidateNested({ each: true })
+  @Type(() => OrderTableDto)
+  tables?: OrderTableDto[];
+
+  // Mesas flexibles: pide mesa para N personas del grupo en el sector de las entradas elegidas
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => TableRequestDto)
+  tableRequest?: TableRequestDto;
 }

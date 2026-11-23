@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useOutletContext } from "react-router-dom";
+import { Link, useOutletContext } from "react-router-dom";
 import api, { errorMessage } from "../lib/api.js";
 import { fmtMoney, fmtWindow, fromLocalInput, plural, toLocalInput } from "../lib/format.js";
 import Badge from "../components/Badge.jsx";
@@ -199,9 +199,15 @@ function TierRow({ tier, sector, cancelled, startOpen, onChanged }) {
         </div>
         {!cancelled && (
           <div className="flex gap-2">
-            <button type="button" className="btn btn-quiet !py-1.5 !text-sm" onClick={() => { setAssigning((v) => !v); setEditing(false); }} aria-expanded={assigning}>
-              Cambiar cantidad
-            </button>
+            {tier.packageManaged ? (
+              <Link to="ubicacion" className="btn btn-quiet !py-1.5 !text-sm">Ver paquete</Link>
+            ) : tier.bySeat || sector.seated > 0 ? (
+              <Link to="ubicacion" className="btn btn-quiet !py-1.5 !text-sm">Elegir asientos</Link>
+            ) : (
+              <button type="button" className="btn btn-quiet !py-1.5 !text-sm" onClick={() => { setAssigning((v) => !v); setEditing(false); }} aria-expanded={assigning}>
+                Cambiar cantidad
+              </button>
+            )}
             <button type="button" className="btn btn-quiet !py-1.5 !text-sm" onClick={() => { setEditing((v) => !v); setAssigning(false); }} aria-expanded={editing}>
               Editar
             </button>
@@ -230,7 +236,9 @@ function TierRow({ tier, sector, cancelled, startOpen, onChanged }) {
         </div>
       ) : (
         <p className="mt-3 text-[15px] text-muted">
-          Este tier todavía no tiene tickets. Usa "Cambiar cantidad" para agregarlos.
+          {sector.seated > 0
+            ? <>Este tier todavía no tiene asientos. Este sector tiene asientos numerados: elígelos en la pestaña <Link to="ubicacion" className="underline hover:text-ink">Ubicación</Link>.</>
+            : <>Este tier todavía no tiene tickets. Usa "Cambiar cantidad" para agregarlos.</>}
         </p>
       )}
 
@@ -373,6 +381,7 @@ export default function EventTiers() {
         <p className="mx-auto mt-2 max-w-md text-[15px] leading-relaxed text-muted">
           Se crea un ticket por cada lugar del aforo de {ev.venueName}:{" "}
           {inv.sectors.map((s) => `${s.name} ${s.capacity}`).join(", ")}. Después los repartes en tiers con su precio.
+          {" "}¿Quieres vender asientos numerados? Elígelo antes en la pestaña <Link to="ubicacion" className="underline hover:text-ink">Ubicación</Link>.
         </p>
         {!cancelled && (
           <button type="button" className="btn btn-primary mt-6" onClick={generate} disabled={generating}>
@@ -404,7 +413,10 @@ export default function EventTiers() {
               <div>
                 <h3 id={`sec-${sector.id}`} className="font-display text-3xl font-semibold leading-none">{sector.name}</h3>
                 <p className="mt-1.5 text-[13px] text-muted">
-                  Aforo {sector.capacity} · {sector.libres} sin asignar a ningún tier (no se venden)
+                  Aforo {sector.capacity}
+                  {sector.seated > 0
+                    ? ` · ${sector.seated} asientos numerados, ${sector.seatsLibres} sin zona de precio (no se venden)`
+                    : ` · ${sector.libres} sin asignar a ningún tier (no se venden)`}
                 </p>
               </div>
               {!cancelled && newTierFor !== sector.id && (

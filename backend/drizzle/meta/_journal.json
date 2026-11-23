@@ -120,6 +120,20 @@
       "when": 1795443246462,
       "tag": "0016_butacas_modo_evento",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795448055365,
+      "tag": "0017_mesas_fijas",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795455314450,
+      "tag": "0018_mesas_flexibles",
+      "breakpoints": true
     }
   ]
 }

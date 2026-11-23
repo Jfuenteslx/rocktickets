@@ -4,3 +4,4 @@ export * from './schema/identity.js';
 export * from './schema/commerce.js';
 export * from './schema/ticketing.js';
 export * from './schema/audit.js';
+export * from './schema/mesas.js';

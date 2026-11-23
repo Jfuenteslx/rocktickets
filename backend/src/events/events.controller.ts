@@ -2,11 +2,14 @@ import {
   BadRequestException,
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   ParseUUIDPipe,
   Patch,
   Post,
+  Put,
+  Query,
   Req,
   UploadedFile,
   UseGuards,
@@ -28,6 +31,7 @@ import { SetTierPausedDto } from './dto/set-tier-paused.dto.js';
 import { AssignTicketsDto } from './dto/assign-tickets.dto.js';
 import { SeatingModeDto } from './dto/seating-mode.dto.js';
 import { AssignSeatsDto } from './dto/assign-seats.dto.js';
+import { AssignTablePackageDto, TableBlocksDto, TablePackageDto, TableValidUntilDto, UpdateTablePackageDto } from './dto/table-package.dto.js';
 import { IssueCourtesyDto } from './dto/issue-courtesy.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionGuard } from '../auth/guards/permission.guard.js';
@@ -170,6 +174,74 @@ export class EventsController {
     @Req() req: RequestWithUser,
   ) {
     return this.eventsService.changeSeatingMode(id, dto, req.user);
+  }
+
+  // Mesas flexibles: ¿hay mesa para N personas en este sector? (sin auth; no revela cuál)
+  @Get('events/:id/table-availability')
+  tableAvailability(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Query('sectorId', ParseUUIDPipe) sectorId: string,
+    @Query('people') people: string,
+  ) {
+    return this.eventsService.tableAvailability(id, sectorId, Number(people));
+  }
+
+  @Get('events/:id/flex-tables')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  flexTables(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithUser) {
+    return this.eventsService.flexTables(id, req.user);
+  }
+
+  @Put('events/:id/table-blocks')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  blockFlexTables(@Param('id', ParseUUIDPipe) id: string, @Body() dto: TableBlocksDto, @Req() req: RequestWithUser) {
+    return this.eventsService.blockFlexTables(id, dto.tableIds, dto.blocked, req.user);
+  }
+
+  // --- Mesas fijas (paquetes y su asignación a mesas) ---
+
+  @Get('events/:id/table-packages')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  listTablePackages(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithUser) {
+    return this.eventsService.listTablePackages(id, req.user);
+  }
+
+  @Post('events/:id/table-packages')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  createTablePackage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: TablePackageDto, @Req() req: RequestWithUser) {
+    return this.eventsService.createTablePackage(id, dto, req.user);
+  }
+
+  @Patch('table-packages/:id')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  updateTablePackage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: UpdateTablePackageDto, @Req() req: RequestWithUser) {
+    return this.eventsService.updateTablePackage(id, dto, req.user);
+  }
+
+  @Delete('table-packages/:id')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  deleteTablePackage(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithUser) {
+    return this.eventsService.deleteTablePackage(id, req.user);
+  }
+
+  @Put('events/:id/table-assignments')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  assignTablePackage(@Param('id', ParseUUIDPipe) id: string, @Body() dto: AssignTablePackageDto, @Req() req: RequestWithUser) {
+    return this.eventsService.assignTablePackage(id, dto, req.user);
+  }
+
+  @Patch('events/:id/table-valid-until')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  changeTableValidUntil(@Param('id', ParseUUIDPipe) id: string, @Body() dto: TableValidUntilDto, @Req() req: RequestWithUser) {
+    return this.eventsService.changeTableValidUntil(id, dto.tableValidUntil, req.user);
   }
 
   @Get('events/:id/inventory')

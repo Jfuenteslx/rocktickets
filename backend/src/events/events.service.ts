@@ -12,6 +12,8 @@ import type { Database } from '../db/client.js';
 import {
   courtesy,
   event,
+  eventTable,
+  tablePackage,
   organizer,
   seat,
   sector,
@@ -33,6 +35,9 @@ import type { UpdateEventDto } from './dto/update-event.dto.js';
 import type { IssueCourtesyDto } from './dto/issue-courtesy.dto.js';
 import type { SeatingModeDto } from './dto/seating-mode.dto.js';
 import type { AssignSeatsDto } from './dto/assign-seats.dto.js';
+import type { TablePackageDto, AssignTablePackageDto } from './dto/table-package.dto.js';
+import { flexAvailability, listFlexTables, setTableBlocks } from './mesas-flex.js';
+import { MAX_TABLES_PER_ORDER, assignPackageToTables, createPackage, deletePackage, listPackages, setTableValidUntil, updatePackage } from './mesas.js';
 import { AuditLogService } from '../audit/audit-log.service.js';
 import {
   assignSeatsToTier,
@@ -77,7 +82,9 @@ export class EventsService {
   async getSeatMap(eventId: string) {
     const [ev] = await this.db.select().from(event).where(eq(event.id, eventId)).limit(1);
     if (!ev) throw new NotFoundException('Evento no encontrado');
-    if (ev.seatingMode !== 'BUTACAS') throw new BadRequestException('Este evento no vende por asiento');
+    if (ev.seatingMode !== 'BUTACAS' && ev.seatingMode !== 'MESAS_FIJAS') {
+      throw new BadRequestException('Este evento no vende por asiento ni por mesa');
+    }
 
     const levels = await this.db
       .select()
@@ -182,11 +189,44 @@ export class EventsService {
           .map((e) => ({ id: e.id, kind: e.kind, name: e.name, x: e.x, y: e.y, w: e.w, h: e.h })),
       })),
       tables: tables.map((t) => ({ id: t.id, sectorId: t.sectorId, label: t.label, x: t.x, y: t.y })),
+      // Mesas fijas: cada mesa se vende completa con su paquete (precio total, personas, botellas)
+      ...(ev.seatingMode === 'MESAS_FIJAS' ? { validUntil: ev.tableValidUntil, maxTablesPerOrder: MAX_TABLES_PER_ORDER, mesas: await this.buildMesas(ev.id, tables, seats) } : {}),
       tiers: tiers
         .filter((t) => seats.some((s) => s.tierId === t.id))
         .map((t) => ({ id: t.id, name: t.name, sectorId: t.sectorId, price: t.price })),
       seats,
     };
+  }
+
+  private async buildMesas(
+    eventId: string,
+    tables: { id: string; sectorId: string; label: string; x: number; y: number }[],
+    seats: { id: string; tableId: string | null; status: 'LIBRE' | 'OCUPADO' | 'NO_VENTA' }[],
+  ) {
+    const links = await this.db.select().from(eventTable).where(eq(eventTable.eventId, eventId));
+    const packages = await this.db.select().from(tablePackage).where(eq(tablePackage.eventId, eventId));
+    const pkgById = new Map(packages.map((p) => [p.id, p]));
+    const linkByTable = new Map(links.map((l) => [l.tableId, l]));
+    return tables
+      .map((t) => {
+        const mine = seats.filter((s) => s.tableId === t.id);
+        const link = linkByTable.get(t.id);
+        const pkg = link ? pkgById.get(link.packageId) : undefined;
+        let status: 'LIBRE' | 'OCUPADO' | 'NO_VENTA' = 'NO_VENTA';
+        if (mine.some((s) => s.status === 'OCUPADO')) status = 'OCUPADO';
+        else if (pkg && mine.length === pkg.people && mine.every((s) => s.status === 'LIBRE')) status = 'LIBRE';
+        return {
+          id: t.id,
+          sectorId: t.sectorId,
+          label: t.label,
+          x: t.x,
+          y: t.y,
+          status,
+          seatIds: mine.map((s) => s.id),
+          package: pkg ? { id: pkg.id, name: pkg.name, people: pkg.people, price: pkg.price, bottleOptions: pkg.bottleOptions } : null,
+        };
+      })
+      .filter((m) => m.seatIds.length > 0);
   }
 
   // Árbol event → sectors → tiers (solo tiers de VENTA: las cortesías no se
@@ -201,7 +241,7 @@ export class EventsService {
     const { byTier } = await ticketCountsByTier(this.db, eventRow.id);
     // Tiers cuyos tickets llevan asiento: solo se compran eligiendo asientos en el mapa
     const seatedTierRows =
-      eventRow.seatingMode === 'BUTACAS'
+      eventRow.seatingMode === 'BUTACAS' || eventRow.seatingMode === 'MESAS_FIJAS'
         ? await this.db
             .selectDistinct({ tierId: ticket.tierId })
             .from(ticket)
@@ -283,12 +323,30 @@ export class EventsService {
       .select({
         sectorId: ticket.sectorId,
         total: count(),
-        libres: sql<number>`count(*) filter (where ${ticket.tierId} is null and ${ticket.status} = 'DISPONIBLE')::int`,
+        // Sin tier y sin asiento: listos para asignar por cantidad
+        libres: sql<number>`count(*) filter (where ${ticket.tierId} is null and ${ticket.status} = 'DISPONIBLE' and ${ticket.seatId} is null)::int`,
+        // Asientos numerados del sector, y cuántos aún no tienen zona de precio (no se venden)
+        seated: sql<number>`count(*) filter (where ${ticket.seatId} is not null)::int`,
+        seatsLibres: sql<number>`count(*) filter (where ${ticket.tierId} is null and ${ticket.status} = 'DISPONIBLE' and ${ticket.seatId} is not null)::int`,
       })
       .from(ticket)
       .where(eq(ticket.eventId, eventId))
       .groupBy(ticket.sectorId);
     const sectorStats = new Map(bySector.map((r) => [r.sectorId, r]));
+    const seatedByTier = new Map(
+      (
+        await this.db
+          .select({ tierId: ticket.tierId, n: count() })
+          .from(ticket)
+          .where(and(eq(ticket.eventId, eventId), sql`${ticket.seatId} is not null`))
+          .groupBy(ticket.tierId)
+      ).map((r) => [r.tierId, Number(r.n)]),
+    );
+
+    // Tiers que maneja un paquete de mesas: su precio y su nombre vienen del paquete
+    const packageTierIds = new Set(
+      (await this.db.select({ tierId: eventTable.tierId }).from(eventTable).where(eq(eventTable.eventId, eventId))).map((r) => r.tierId),
+    );
 
     const now = new Date();
     const sectorName = new Map(sectors.map((x) => [x.id, x.name]));
@@ -296,6 +354,8 @@ export class EventsService {
     return {
       eventId,
       status: ev.status,
+      seatingMode: ev.seatingMode,
+      tableValidUntil: ev.tableValidUntil,
       sinTier: unassigned,
       sectors: sectors.map((x) => ({
         id: x.id,
@@ -303,6 +363,8 @@ export class EventsService {
         capacity: x.capacity,
         generated: Number(sectorStats.get(x.id)?.total ?? 0),
         libres: Number(sectorStats.get(x.id)?.libres ?? 0), // listos para asignar a un tier
+        seated: Number(sectorStats.get(x.id)?.seated ?? 0),
+        seatsLibres: Number(sectorStats.get(x.id)?.seatsLibres ?? 0),
       })),
       tiers: tiers.map((t) => {
         const m = byTier.get(t.id) ?? {};
@@ -325,6 +387,8 @@ export class EventsService {
           isPaused: t.isPaused,
           startsAt: t.startsAt,
           endsAt: t.endsAt,
+          bySeat: (seatedByTier.get(t.id) ?? 0) > 0, // se reparte eligiendo asientos, no por cantidad
+          packageManaged: packageTierIds.has(t.id),
           estado,
           tickets: {
             total,
@@ -646,6 +710,71 @@ export class EventsService {
     return result;
   }
 
+  async listTablePackages(eventId: string, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    return listPackages(this.db, eventId);
+  }
+
+  async createTablePackage(eventId: string, dto: TablePackageDto, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    const row = await createPackage(this.db, eventId, dto);
+    await this.auditLog.log(actor.sub, 'TABLE_PACKAGE_CREATED', 'Event', eventId, { packageId: row.id, name: row.name });
+    return row;
+  }
+
+  private async getManagedPackage(packageId: string, actor: AuthUser) {
+    const [p] = await this.db.select().from(tablePackage).where(eq(tablePackage.id, packageId)).limit(1);
+    if (!p) throw new NotFoundException('Paquete no encontrado');
+    await this.getManagedEvent(p.eventId, actor);
+    return p;
+  }
+
+  async updateTablePackage(packageId: string, dto: Partial<TablePackageDto>, actor: AuthUser) {
+    await this.getManagedPackage(packageId, actor);
+    const row = await updatePackage(this.db, packageId, dto);
+    await this.auditLog.log(actor.sub, 'TABLE_PACKAGE_UPDATED', 'Event', row!.eventId, { packageId });
+    return row;
+  }
+
+  async deleteTablePackage(packageId: string, actor: AuthUser) {
+    const p = await this.getManagedPackage(packageId, actor);
+    const res = await deletePackage(this.db, packageId);
+    await this.auditLog.log(actor.sub, 'TABLE_PACKAGE_DELETED', 'Event', p.eventId, { packageId, name: p.name });
+    return res;
+  }
+
+  async assignTablePackage(eventId: string, dto: AssignTablePackageDto, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    const res = await assignPackageToTables(this.db, eventId, dto.packageId ?? null, dto.tableIds);
+    await this.auditLog.log(actor.sub, 'TABLE_PACKAGE_ASSIGNED', 'Event', eventId, {
+      packageId: dto.packageId ?? null,
+      tables: dto.tableIds.length,
+    });
+    return res;
+  }
+
+  // Público: ¿hay mesa para N personas en este sector? (no dice cuál)
+  tableAvailability(eventId: string, sectorId: string, people: number) {
+    return flexAvailability(this.db, eventId, sectorId, people);
+  }
+
+  async flexTables(eventId: string, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    return listFlexTables(this.db, eventId);
+  }
+
+  async blockFlexTables(eventId: string, tableIds: string[], blocked: boolean, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    const res = await setTableBlocks(this.db, eventId, tableIds, blocked);
+    await this.auditLog.log(actor.sub, 'FLEX_TABLES_BLOCKED', 'Event', eventId, { tables: tableIds.length, blocked });
+    return res;
+  }
+
+  async changeTableValidUntil(eventId: string, value: string, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    return setTableValidUntil(this.db, eventId, value);
+  }
+
   async assignSeats(tierId: string, dto: AssignSeatsDto, actor: AuthUser) {
     await this.getManagedTier(tierId, actor);
     const result = await assignSeatsToTier(this.db, tierId, dto.seatIds, dto.release ?? false);
@@ -716,6 +845,12 @@ export class EventsService {
   async updateTier(tierId: string, dto: UpdateTierDto, actor: AuthUser) {
     const { tier: current, ev } = await this.getManagedTier(tierId, actor);
     if (ev.status === 'CANCELADO') throw new BadRequestException('Un evento cancelado no se puede editar');
+    if (dto.name !== undefined || dto.price !== undefined) {
+      const [managed] = await this.db.select({ t: eventTable.tierId }).from(eventTable).where(eq(eventTable.tierId, tierId)).limit(1);
+      if (managed) {
+        throw new ConflictException('Este tier lo maneja un paquete de mesas: cambia su nombre o precio desde el paquete');
+      }
+    }
 
     const changes: Partial<typeof tier.$inferInsert> = {};
     if (dto.name !== undefined) changes.name = dto.name.trim();

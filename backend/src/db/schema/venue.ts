@@ -184,6 +184,9 @@ export const event = pgTable('event', {
   status: eventStatusEnum('status').notNull().default('ACTIVO'),
   // Cómo se ubica el público (ver seatingModeEnum). Solo cambia mientras no haya ventas.
   seatingMode: seatingModeEnum('seating_mode').notNull().default('NINGUNO'),
+  // Mesas fijas/flexibles: hasta qué hora (HH:MM, hora de La Paz) se guarda la mesa reservada.
+  // Pasada esa hora la mesa queda libre para el local; los tickets siguen valiendo.
+  tableValidUntil: text('table_valid_until').notNull().default('23:00'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('event_venue_id_idx').on(table.venueId),
