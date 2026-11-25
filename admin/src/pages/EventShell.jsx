@@ -8,8 +8,9 @@ import Badge from "../components/Badge.jsx";
 import { TicketGlyph } from "../components/Logo.jsx";
 
 const TABS = [
+  { to: "configurar", label: "Configurar" },
   { to: "", label: "Entradas", end: true },
-  { to: "ubicacion", label: "Ubicación" },
+  { to: "ubicacion", label: "Ubicación (avanzado)" },
   { to: "ventas", label: "Ventas" },
   { to: "cortesias", label: "Cortesías" },
   { to: "puerta", label: "Puerta" },

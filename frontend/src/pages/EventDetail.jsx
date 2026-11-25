@@ -9,8 +9,6 @@ import VenueSection from "../components/VenueSection";
 import SeatPicker from "../components/SeatPicker";
 import TablePicker from "../components/TablePicker";
 import TableRequest from "../components/TableRequest";
-import GoogleButton from "../components/GoogleButton";
-import { GOOGLE_ENABLED, useBuyer } from "../lib/buyerAuth";
 import { ErrorBox, LoadError, Loading } from "../components/StateMessage";
 
 const MAX_PER_TIER = 10;
@@ -46,7 +44,6 @@ function Stepper({ value, max, onChange, label }) {
 export default function EventDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { buyer: account, logout } = useBuyer();
 
   const [event, setEvent] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -57,15 +54,8 @@ export default function EventDetail() {
   const [tables, setTables] = useState([]); // mesas fijas elegidas en el plano
   const [mapKey, setMapKey] = useState(0);
   const [tableRequest, setTableRequest] = useState(null); // mesas flexibles: { sectorId, people }
-  const [buyer, setBuyer] = useState({ name: "", email: "", phone: "" });
-  const [accepted, setAccepted] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-
-  // Con sesión iniciada, completa nombre y correo (sin pisar lo que el comprador ya escribió)
-  useEffect(() => {
-    if (account) setBuyer((b) => ({ ...b, name: b.name || account.name, email: b.email || account.email }));
-  }, [account]);
 
   useEffect(() => {
     api
@@ -131,10 +121,6 @@ export default function EventDetail() {
     try {
       const { data } = await api.post("/orders", {
         eventId: id,
-        buyerName: buyer.name.trim(),
-        buyerEmail: buyer.email.trim(),
-        buyerPhone: buyer.phone.trim(),
-        acceptTerms: true,
         ...(cartItems.length > 0 && { items: cartItems.map((i) => ({ tierId: i.tierId, quantity: i.quantity })) }),
         ...(seats.length > 0 && { seatIds: seats.map((s) => s.id) }),
         ...(tables.length > 0 && { tables: tables.map((t) => ({ tableId: t.id })) }),
@@ -315,97 +301,18 @@ export default function EventDetail() {
                   <span>{formatMoney(total)}</span>
                 </p>
 
-                {GOOGLE_ENABLED && (
-                  <div className="mt-4">
-                    {account ? (
-                      <p className="text-sm text-zinc-400">
-                        Comprando como <span className="text-white">{account.email}</span> ·{" "}
-                        <button type="button" onClick={logout} className="underline hover:text-white">
-                          Salir
-                        </button>
-                      </p>
-                    ) : (
-                      <>
-                        <p className="mb-2 text-sm text-zinc-400">¿Compras más rápido? Inicia sesión y completamos tus datos:</p>
-                        <GoogleButton />
-                      </>
-                    )}
-                  </div>
-                )}
-
-                <div className="mt-4 grid gap-3">
-                  <div>
-                    <label htmlFor="buyer-name" className="sr-only">
-                      Nombre completo
-                    </label>
-                    <input
-                      id="buyer-name"
-                      type="text"
-                      autoComplete="name"
-                      placeholder="Nombre completo"
-                      value={buyer.name}
-                      onChange={(e) => setBuyer({ ...buyer, name: e.target.value })}
-                      required
-                      className="input"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="buyer-email" className="sr-only">
-                      Correo electrónico
-                    </label>
-                    <input
-                      id="buyer-email"
-                      type="email"
-                      autoComplete="email"
-                      placeholder="Correo electrónico"
-                      value={buyer.email}
-                      onChange={(e) => setBuyer({ ...buyer, email: e.target.value })}
-                      required
-                      className="input"
-                    />
-                  </div>
-                  <div>
-                    <label htmlFor="buyer-phone" className="sr-only">
-                      Teléfono
-                    </label>
-                    <input
-                      id="buyer-phone"
-                      type="tel"
-                      autoComplete="tel"
-                      placeholder="Teléfono"
-                      value={buyer.phone}
-                      onChange={(e) => setBuyer({ ...buyer, phone: e.target.value })}
-                      required
-                      className="input"
-                    />
-                  </div>
-                </div>
-
-                <label className="mt-4 flex items-start gap-2 text-sm text-zinc-400">
-                  <input type="checkbox" checked={accepted} onChange={(e) => setAccepted(e.target.checked)} required className="mt-1" />
-                  <span>
-                    Acepto los{" "}
-                    <Link to="/terminos" target="_blank" className="text-white underline">
-                      términos y condiciones
-                    </Link>{" "}
-                    y la{" "}
-                    <Link to="/privacidad" target="_blank" className="text-white underline">
-                      política de privacidad
-                    </Link>
-                    .
-                  </span>
-                </label>
-
                 {error && (
                   <p role="alert" className="mt-3 text-sm text-red-400">
                     {error}
                   </p>
                 )}
 
-                <button type="submit" disabled={submitting || !accepted} className="btn btn-primary mt-4 w-full py-3">
+                <button type="submit" disabled={submitting} className="btn btn-primary mt-4 w-full py-3">
                   {submitting ? "Procesando…" : "Continuar con el pago"}
                 </button>
-                <p className="mt-3 text-center text-xs text-zinc-500">Reservamos tus entradas por {RESERVATION_MINUTES} minutos.</p>
+                <p className="mt-3 text-center text-xs text-zinc-500">
+                  Reservamos tus entradas por {RESERVATION_MINUTES} minutos. En el siguiente paso pagas con QR y nos dejas tus datos.
+                </p>
               </form>
             )}
             {count === 0 && error && (

@@ -99,6 +99,15 @@ export const payment = pgTable('payment', {
   // checkout (5 min, siempre dentro de los 15 min de reserva de la orden).
   qrPayload: text('qr_payload'),
   checkoutExpiresAt: timestamp('checkout_expires_at', { withTimezone: true }),
+  // Pago manual (QR del banco + verificación del superadmin). Lo que el comprador declara al
+  // avisar "ya pagué" y la resolución del superadmin. Solo el superadmin ve estos datos.
+  payerName: text('payer_name'),
+  payerEmail: text('payer_email'),
+  payerPhone: text('payer_phone'),
+  declaredAt: timestamp('declared_at', { withTimezone: true }),
+  reviewedBy: uuid('reviewed_by').references(() => user.id),
+  reviewedAt: timestamp('reviewed_at', { withTimezone: true }),
+  reviewNote: text('review_note'),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => [
   index('payment_order_id_idx').on(table.orderId),

@@ -1,12 +1,31 @@
+import { useCallback, useEffect, useState } from "react";
 import { NavLink, Outlet, useMatch } from "react-router-dom";
+import api from "../lib/api.js";
 import Logo from "./Logo.jsx";
 import { useAuth } from "../lib/auth.jsx";
 
 export default function Layout() {
   const { user, logout } = useAuth();
   const isSuper = user.role === "SUPERADMIN";
+
+  // Pagos que los compradores avisaron y esperan verificación (solo superadmin)
+  const [pending, setPending] = useState(0);
+  const refreshPending = useCallback(() => {
+    if (!isSuper) return;
+    api.get("/payments/manual/count").then((r) => setPending(r.data.pending)).catch(() => {});
+  }, [isSuper]);
+  useEffect(() => {
+    refreshPending();
+    const t = setInterval(refreshPending, 60000);
+    window.addEventListener("payments-changed", refreshPending);
+    return () => {
+      clearInterval(t);
+      window.removeEventListener("payments-changed", refreshPending);
+    };
+  }, [refreshPending]);
+
   const links = isSuper
-    ? [["/eventos", "Eventos"], ["/ventas", "Ventas"], ["/organizadores", "Organizadores"], ["/personal", "Personal"], ["/locales", "Locales"]]
+    ? [["/eventos", "Eventos"], ["/ventas", "Ventas"], ["/pagos", "Pagos"], ["/organizadores", "Organizadores"], ["/personal", "Personal"], ["/locales", "Locales"]]
     : [["/eventos", "Eventos"], ["/ventas", "Ventas"], ["/personal", "Personal"]];
   const org = user.role === "SUPERADMIN" ? "Rocktickets" : user.organizerName;
   // El editor del plano necesita todo el ancho de la ventana; el resto del panel va en columna centrada
@@ -31,6 +50,11 @@ export default function Layout() {
                 }
               >
                 {label}
+                {to === "/pagos" && pending > 0 && (
+                  <span className="ml-1.5 rounded-full bg-lamp px-1.5 text-[12px] font-semibold leading-5 text-lamp-ink" aria-label={`${pending} por verificar`}>
+                    {pending}
+                  </span>
+                )}
               </NavLink>
             ))}
           </nav>

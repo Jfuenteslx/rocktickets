@@ -134,6 +134,13 @@
       "when": 1795455314450,
       "tag": "0018_mesas_flexibles",
       "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1795571301458,
+      "tag": "0019_pago_manual",
+      "breakpoints": true
     }
   ]
 }

@@ -7,11 +7,13 @@ import EventForm from "./pages/EventForm.jsx";
 import EventShell from "./pages/EventShell.jsx";
 import EventTiers from "./pages/EventTiers.jsx";
 import EventSeating from "./pages/EventSeating.jsx";
+import EventSetup from "./pages/EventSetup.jsx";
 import EventCourtesies from "./pages/EventCourtesies.jsx";
 import EventDetails from "./pages/EventDetails.jsx";
 import EventDoor from "./pages/EventDoor.jsx";
 import EventSales from "./pages/EventSales.jsx";
 import Sales from "./pages/Sales.jsx";
+import Payments from "./pages/Payments.jsx";
 import Organizers from "./pages/Organizers.jsx";
 import OrganizerDetail from "./pages/OrganizerDetail.jsx";
 import Staff from "./pages/Staff.jsx";
@@ -45,6 +47,7 @@ export default function App() {
             <Route path="/eventos/:id/editar" element={<EventForm />} />
             <Route path="/eventos/:id" element={<EventShell />}>
               <Route index element={<EventTiers />} />
+              <Route path="configurar" element={<EventSetup />} />
               <Route path="ubicacion" element={<EventSeating />} />
               <Route path="cortesias" element={<EventCourtesies />} />
               <Route path="ventas" element={<EventSales />} />
@@ -54,6 +57,7 @@ export default function App() {
             <Route path="/organizadores" element={<SuperOnly><Organizers /></SuperOnly>} />
             <Route path="/organizadores/:id" element={<SuperOnly><OrganizerDetail /></SuperOnly>} />
             <Route path="/ventas" element={<Sales />} />
+            <Route path="/pagos" element={<SuperOnly><Payments /></SuperOnly>} />
             <Route path="/personal" element={<Staff />} />
             <Route path="/locales" element={<SuperOnly><Venues /></SuperOnly>} />
             <Route path="/locales/:id/plano" element={<SuperOnly><VenuePlan /></SuperOnly>} />

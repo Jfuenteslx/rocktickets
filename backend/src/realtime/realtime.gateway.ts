@@ -15,12 +15,12 @@ import type { JwtPayload } from '../auth/auth.service.js';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
 import { event } from '../db/index.js';
+import { corsOrigins } from '../common/env.js';
 import { canManageOrganizer, canScanEvent, loadAuthUser } from '../auth/access.js';
 
-// CORS abierto para el MVP — en producción se restringe a los dominios
-// reales del frontend/apps, igual que hicimos con app.enableCors() en la API REST.
+// Mismos orígenes permitidos que la API REST (CORS_ORIGINS)
 @Injectable()
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({ cors: { origin: corsOrigins() } })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
   server!: Server;

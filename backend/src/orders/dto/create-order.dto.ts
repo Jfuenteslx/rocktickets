@@ -37,20 +37,25 @@ export class CreateOrderDto {
   @IsUUID()
   eventId!: string;
 
+  // Los datos del comprador y la aceptación de términos se piden ahora en la pantalla de pago
+  // (POST orders/token/:token/payment/declare). Aquí son opcionales por compatibilidad.
+  @IsOptional()
   @IsString()
   @MinLength(2)
-  buyerName!: string;
+  buyerName?: string;
 
+  @IsOptional()
   @IsEmail()
-  buyerEmail!: string;
+  buyerEmail?: string;
 
+  @IsOptional()
   @IsString()
   @MinLength(6)
-  buyerPhone!: string;
+  buyerPhone?: string;
 
-  // Casilla obligatoria de términos y privacidad: solo vale `true`
+  @IsOptional()
   @Equals(true, { message: 'Debes aceptar los términos y la política de privacidad' })
-  acceptTerms!: true;
+  acceptTerms?: true;
 
   // Entradas por cantidad (sin asiento). Puede ir vacío si la compra es solo de asientos.
   @IsOptional()

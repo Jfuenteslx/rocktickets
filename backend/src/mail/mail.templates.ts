@@ -55,3 +55,50 @@ export function recoverMail(to: string, orders: MailOrder[], hasPdf: boolean): M
   );
   return { to, subject: 'Recupera tus entradas de Rocktickets', html, text };
 }
+
+// ---- Pago manual ----
+
+function simple(title: string, paragraphs: string[], button?: { label: string; href: string }): { html: string; text: string } {
+  const body = paragraphs.map((t) => `<p style="color:#d4d4d8;font-size:14px;margin:0 0 10px">${esc(t)}</p>`).join('');
+  const btn = button
+    ? `<a href="${esc(button.href)}" style="display:inline-block;margin-top:8px;background:#e11d2e;color:#fff;text-decoration:none;padding:8px 14px;border-radius:6px;font-weight:600">${esc(button.label)}</a>`
+    : '';
+  const html = `<!doctype html><html><body style="margin:0;background:#000;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:24px">
+    <table width="520" cellpadding="0" cellspacing="0" style="max-width:520px;background:#09090b;border:1px solid #27272a;border-radius:10px;padding:24px">
+      <tr><td><div style="font-size:22px;font-weight:800;color:#fff;letter-spacing:1px">ROCK<span style="color:#e11d2e">TICKETS</span></div>
+        <h1 style="color:#fff;font-size:20px;margin:18px 0 10px">${esc(title)}</h1>${body}${btn}</td></tr>
+    </table></td></tr></table></body></html>`;
+  const text = [title, '', ...paragraphs, ...(button ? ['', `${button.label}: ${button.href}`] : [])].join('\n');
+  return { html, text };
+}
+
+// Al comprador cuando el superadmin rechaza su pago
+export function paymentRejectedMail(
+  to: string,
+  o: { name: string; eventName: string; ref: string; reason: string | null; helpLink: string },
+): MailMessage {
+  const { html, text } = simple(
+    'No pudimos verificar tu pago',
+    [
+      `Hola ${o.name}, no pudimos confirmar el pago de tu compra #${o.ref} para ${o.eventName}.`,
+      ...(o.reason ? [`Motivo: ${o.reason}`] : []),
+      'Tus entradas volvieron a estar disponibles. Si ya pagaste, escríbenos con tu número de orden y el comprobante y lo resolvemos.',
+    ],
+    { label: 'Ir a ayuda', href: o.helpLink },
+  );
+  return { to, subject: `No pudimos verificar tu pago (#${o.ref})`, html, text };
+}
+
+// A quien revisa los pagos, cuando entra uno nuevo
+export function paymentToReviewMail(
+  to: string,
+  o: { name: string; amount: string; ref: string; adminLink: string | null },
+): MailMessage {
+  const { html, text } = simple(
+    'Nuevo pago por verificar',
+    [`${o.name} avisó que pagó Bs ${o.amount} (orden #${o.ref}). Verifica el depósito y apruébalo para enviarle sus entradas.`],
+    o.adminLink ? { label: 'Abrir bandeja de pagos', href: o.adminLink } : undefined,
+  );
+  return { to, subject: `Pago por verificar: Bs ${o.amount} (#${o.ref})`, html, text };
+}

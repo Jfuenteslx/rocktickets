@@ -62,3 +62,8 @@ desktop.ini
 *.njsproj
 *.sln
 *.sw?
+
+# --- QR de cobro real: cada entorno pone el suyo (ver backend/assets/LEEME.txt) ---
+backend/assets/pago-qr.png
+# --- Volcados de limpieza de la base (pueden tener datos reales) ---
+backend/respaldo-*.json

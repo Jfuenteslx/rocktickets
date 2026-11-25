@@ -5,6 +5,13 @@ import { user, venue, sector, organizer } from './index.js';
 import { eq } from 'drizzle-orm';
 
 async function seed() {
+  // Este seed crea un SUPERADMIN con contraseña conocida (admin123): jamás en producción.
+  // El primer admin real se crea con `node crear-admin.cjs` (contraseña tuya).
+  if (process.env.NODE_ENV === 'production') {
+    console.error('❌ El seed está deshabilitado en producción (crea un admin con contraseña conocida). Usa: node crear-admin.cjs');
+    process.exit(1);
+  }
+
   const email = 'admin@rocktickets.local';
   const [existingUser] = await db.select().from(user).where(eq(user.email, email)).limit(1);
 

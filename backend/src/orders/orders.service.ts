@@ -10,11 +10,21 @@ import { MAX_TABLES_PER_ORDER } from '../events/mesas.js';
 import { chooseTables, freeOf, loadFlexTables, splitPeople } from '../events/mesas-flex.js';
 import { seatLabel, seatLabelOrNull } from '../events/seat-label.js';
 import type { CreateOrderDto } from './dto/create-order.dto.js';
-import { CheckoutService } from '../payments/checkout.service.js';
+import { expireOrder } from './expire-order.js';
 import { TERMS_VERSION } from './terms.js';
+import { paymentInfo, reviewHoldHours } from '../payments/manual-payment.js';
 
-// El texto del QR no sale de la API: el comprador lo ve como imagen (GET .../payment/qr.png)
-const publicPayment = <T extends { qrPayload: string | null }>({ qrPayload: _qr, ...rest }: T) => rest;
+// Del pago, el comprador solo ve estado, monto y (si lo rechazaron) el motivo. Los datos que declaró
+// y quién lo revisó son del superadmin.
+const publicPayment = (p: { id: string; status: string; amount: string; currency: string; createdAt: Date; declaredAt: Date | null; reviewNote: string | null }) => ({
+  id: p.id,
+  status: p.status,
+  amount: p.amount,
+  currency: p.currency,
+  createdAt: p.createdAt,
+  declaredAt: p.declaredAt,
+  rejectionReason: p.status === 'RECHAZADO' ? p.reviewNote : null,
+});
 
 const RESERVATION_MINUTES = 15;
 const RECONCILIATION_HOURS = 2;
@@ -24,7 +34,6 @@ export class OrdersService {
   constructor(
     @Inject(DRIZZLE) private readonly db: Database,
     @InjectQueue('order-expiration') private readonly expirationQueue: Queue,
-    private readonly checkout: CheckoutService,
   ) {}
 
   private async runCreateOrderTransaction(dto: CreateOrderDto, buyerId: string | null) {
@@ -266,14 +275,15 @@ export class OrdersService {
         .insert(order)
         .values({
           eventId: dto.eventId,
-          buyerName: dto.buyerName,
-          buyerEmail: dto.buyerEmail,
-          buyerPhone: dto.buyerPhone,
+          // Los datos del comprador se piden en la pantalla de pago (al avisar "ya pagué");
+          // hasta entonces quedan vacíos. Si el cliente los manda igual, se guardan.
+          buyerName: dto.buyerName ?? '',
+          buyerEmail: dto.buyerEmail ?? '',
+          buyerPhone: dto.buyerPhone ?? '',
           status: 'PENDIENTE_PAGO',
           expiresAt,
           buyerId,
-          termsAcceptedAt: now,
-          termsVersion: TERMS_VERSION,
+          ...(dto.acceptTerms ? { termsAcceptedAt: now, termsVersion: TERMS_VERSION } : {}),
         })
         .returning();
 
@@ -340,6 +350,7 @@ export class OrdersService {
         .values({
           orderId: createdOrder.id,
           status: 'PENDIENTE',
+          provider: 'MANUAL',
           amount: totalAmount,
           reconciliationExpiresAt,
         })
@@ -364,10 +375,7 @@ export class OrdersService {
       { delay: RESERVATION_MINUTES * 60_000, jobId: result.order.id },
     );
 
-    // QR de pago (fuera de la transacción de reserva: es una llamada a la pasarela).
-    // Si falla, la compra sigue y el comprador pide el QR de nuevo desde su pantalla.
-    const charged = await this.checkout.tryCreateCharge(result.payment.id);
-    return { ...result, payment: publicPayment(charged ?? result.payment) };
+    return { ...result, payment: publicPayment(result.payment) };
   }
 
   async getOrderByToken(accessToken: string) {
@@ -445,46 +453,19 @@ export class OrdersService {
       ...foundOrder,
       items,
       payments: payments.map(publicPayment),
+      paymentInfo: paymentInfo(),
+      reviewHoldHours: reviewHoldHours(),
       tickets: ticketsOut,
       tables: mesaRows,
       event: ev ? { id: ev.id, name: ev.name, startsAt: ev.startsAt, endsAt: ev.endsAt, venueName: ven?.name ?? null, tableValidUntil: ev.tableValidUntil } : null,
     };
   }
 
-  // Llamado por el worker de BullMQ (OrderExpirationProcessor) cuando se
-  // cumplen los 15 min de la reserva. Idempotente: si la Order ya no está
-  // PENDIENTE_PAGO (se pagó o ya expiró antes), no hace nada — el UPDATE
-  // condicionado devuelve 0 filas y listo, sin lanzar error.
-  async expireOrderIfStillPending(orderId: string): Promise<{ expired: boolean }> {
-    return this.db.transaction(async (tx) => {
-      const [updated] = await tx
-        .update(order)
-        .set({ status: 'EXPIRADA' })
-        .where(and(eq(order.id, orderId), eq(order.status, 'PENDIENTE_PAGO')))
-        .returning();
-
-      if (!updated) {
-        return { expired: false }; // ya estaba PAGADA, o ya había expirado antes
-      }
-
-      // La mesa apartada por esta orden vuelve a estar libre
-      await tx.delete(tableHold).where(eq(tableHold.orderId, orderId));
-
-      // Libera los tickets reservados: vuelven al pool DISPONIBLE del mismo tier.
-      const items = await tx.select().from(orderItem).where(eq(orderItem.orderId, orderId));
-      if (items.length > 0) {
-        await tx
-          .update(ticket)
-          .set({ status: 'DISPONIBLE', orderItemId: null })
-          .where(
-            and(
-              inArray(ticket.orderItemId, items.map((i) => i.id)),
-              eq(ticket.status, 'RESERVADO'),
-            ),
-          );
-      }
-
-      return { expired: true };
-    });
+  // Llamado por el worker de BullMQ (OrderExpirationProcessor) cuando se cumplen los 15 min de la
+  // reserva. Idempotente: si la Order ya no está PENDIENTE_PAGO (se pagó o ya expiró antes), no hace
+  // nada. Si el comprador ya avisó su pago (EN_REVISION) tampoco libera, salvo `force` (fin del plazo
+  // máximo de revisión).
+  async expireOrderIfStillPending(orderId: string, opts: { force?: boolean } = {}): Promise<{ expired: boolean }> {
+    return expireOrder(this.db, orderId, opts);
   }
 }

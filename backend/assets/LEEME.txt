@@ -1,0 +1,6 @@
+Coloca aquí la imagen del QR de cobro de tu cuenta bancaria con el nombre:
+
+    pago-qr.png
+
+Es la imagen que ve el comprador en la pantalla de pago. En producción el servidor no arranca sin ella.
+(En desarrollo, si no existe, se muestra un QR de prueba que no sirve para pagar.)

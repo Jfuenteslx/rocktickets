@@ -45,6 +45,9 @@ export const paymentStatusEnum = pgEnum('payment_status', [
   'REEMBOLSADO',
   // El banco reportó un monto distinto al cobrado: no confirma la orden; lo revisa el superadmin
   'NO_CONCILIADO',
+  // Pago manual: el comprador avisó que pagó y el superadmin aún debe verificarlo / lo rechazó
+  'EN_REVISION',
+  'RECHAZADO',
 ]);
 
 // Tier: VENTA = se compra por la web; CORTESIA = entradas gratis que el ADMIN

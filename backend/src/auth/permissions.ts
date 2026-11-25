@@ -9,6 +9,7 @@ export type Permission =
   | 'venues:manage'
   | 'orders:read'
   | 'payments:read'
+  | 'payments:review'
   | 'tickets:read'
   | 'access:scan'
   | 'access:read'
@@ -28,6 +29,7 @@ const ROLE_PERMISSIONS: Record<UserRole, Permission[]> = {
     'venues:manage',
     'orders:read',
     'payments:read',
+    'payments:review',
     'tickets:read',
     'access:scan',
     'access:read',

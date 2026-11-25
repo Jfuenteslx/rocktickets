@@ -31,7 +31,7 @@ import { SetTierPausedDto } from './dto/set-tier-paused.dto.js';
 import { AssignTicketsDto } from './dto/assign-tickets.dto.js';
 import { SeatingModeDto } from './dto/seating-mode.dto.js';
 import { AssignSeatsDto } from './dto/assign-seats.dto.js';
-import { AssignTablePackageDto, TableBlocksDto, TablePackageDto, TableValidUntilDto, UpdateTablePackageDto } from './dto/table-package.dto.js';
+import { SetupDto, AssignTablePackageDto, TableBlocksDto, TablePackageDto, TableValidUntilDto, UpdateTablePackageDto } from './dto/table-package.dto.js';
 import { IssueCourtesyDto } from './dto/issue-courtesy.dto.js';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard.js';
 import { PermissionGuard } from '../auth/guards/permission.guard.js';
@@ -184,6 +184,21 @@ export class EventsController {
     @Query('people') people: string,
   ) {
     return this.eventsService.tableAvailability(id, sectorId, Number(people));
+  }
+
+  // Asistente de configuración: estado actual y aplicar (solo eventos sin ventas)
+  @Get('events/:id/setup')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  getSetup(@Param('id', ParseUUIDPipe) id: string, @Req() req: RequestWithUser) {
+    return this.eventsService.getSetup(id, req.user);
+  }
+
+  @Put('events/:id/setup')
+  @UseGuards(JwtAuthGuard, PermissionGuard)
+  @RequierePermiso('events:manage')
+  applySetup(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetupDto, @Req() req: RequestWithUser) {
+    return this.eventsService.applySetup(id, dto, req.user);
   }
 
   @Get('events/:id/flex-tables')

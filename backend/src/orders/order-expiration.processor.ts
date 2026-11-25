@@ -11,14 +11,14 @@ export class OrderExpirationProcessor extends WorkerHost {
     super();
   }
 
-  async process(job: Job<{ orderId: string }>): Promise<void> {
-    const { orderId } = job.data;
-    const result = await this.ordersService.expireOrderIfStillPending(orderId);
+  async process(job: Job<{ orderId: string; force?: boolean }>): Promise<void> {
+    const { orderId, force } = job.data;
+    const result = await this.ordersService.expireOrderIfStillPending(orderId, { force });
 
     if (result.expired) {
       this.logger.log(`Order ${orderId} expiró — stock liberado`);
     } else {
-      this.logger.log(`Order ${orderId} ya no estaba pendiente, no se tocó nada`);
+      this.logger.log(`Order ${orderId} no se liberó (ya estaba resuelta o su pago está en revisión)`);
     }
   }
 }

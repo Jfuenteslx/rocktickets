@@ -34,15 +34,18 @@ export default function OrderStatus() {
     load();
   }, [load]);
 
-  // Mientras espera el pago, consulta cada 3 s; se detiene cuando el estado cambia.
+  // Mientras espera el pago consulta cada 3 s; con el pago en revisión (puede tardar horas) cada 20 s.
+  // Se detiene cuando el estado cambia.
   const pending = order?.status === "PENDIENTE_PAGO";
+  const inReview = pending && order.payments.some((p) => p.status === "EN_REVISION");
   useEffect(() => {
     if (!pending) return;
-    const t = setInterval(load, 3000);
+    const t = setInterval(load, inReview ? 20000 : 3000);
     return () => clearInterval(t);
-  }, [pending, load]);
+  }, [pending, inReview, load]);
 
-  const secondsLeft = useCountdown(pending ? order.expiresAt : null);
+  const secondsLeft = useCountdown(pending && !inReview ? order.expiresAt : null);
+  const rejected = order?.payments?.find((p) => p.status === "RECHAZADO");
 
   if (error)
     return (
@@ -72,18 +75,18 @@ export default function OrderStatus() {
         </div>
       )}
 
-      {pending && (
+      {pending && !inReview && (
         <div className="mt-6 rounded-xl border border-amber-700/60 bg-amber-950/30 p-5">
           <div className="flex items-center justify-between gap-4">
-            <p className="font-semibold text-amber-300">Esperando la confirmación del pago…</p>
+            <p className="font-semibold text-amber-300">Completa tu pago para asegurar tus entradas</p>
             <p className="font-mono text-2xl font-bold text-amber-200" aria-label="Tiempo restante">
               {formatCountdown(secondsLeft)}
             </p>
           </div>
           <p className="mt-2 text-sm text-amber-200/80">
-            Total: {formatMoney(order.payments[0]?.amount ?? 0)}. Reservamos tus entradas hasta que se acabe el tiempo.
+            Total: {formatMoney(order.payments[0]?.amount ?? 0)}. Reservamos tus entradas hasta que se acabe el tiempo: paga y avísanos antes de que llegue a cero.
           </p>
-          <p className="mt-3 text-xs text-amber-200/60">Esta pantalla se actualiza sola cuando se confirme el pago. Guarda este enlace.</p>
+          <p className="mt-3 text-xs text-amber-200/60">Guarda este enlace: es tu acceso a la compra.</p>
         </div>
       )}
 
@@ -93,8 +96,13 @@ export default function OrderStatus() {
 
       {order.status === "EXPIRADA" && (
         <div className="card mt-6 p-5">
-          <p className="font-medium text-white">Esta compra expiró sin confirmarse el pago.</p>
-          <p className="mt-1 text-sm text-zinc-400">Las entradas volvieron a estar disponibles. Si ya pagaste, escríbenos desde la página de ayuda.</p>
+          <p className="font-medium text-white">{rejected ? "Esta compra se canceló." : "Esta compra expiró sin confirmarse el pago."}</p>
+          {rejected && (
+            <p className="mt-2 text-sm text-red-300">
+              No pudimos verificar tu pago{rejected.rejectionReason ? `: ${rejected.rejectionReason}` : "."}
+            </p>
+          )}
+          <p className="mt-1 text-sm text-zinc-400">Las entradas volvieron a estar disponibles. Si ya pagaste, escríbenos desde la página de ayuda con el número de tu orden.</p>
           <div className="mt-4 flex gap-3">
             {order.event?.id && (
               <Link to={`/eventos/${order.event.id}`} className="btn btn-primary">

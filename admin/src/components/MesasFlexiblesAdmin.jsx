@@ -16,7 +16,7 @@ const STATUS_STYLE = {
 };
 const pointsAttr = (pts) => pts.map((p) => `${p.x},${p.y}`).join(" ");
 
-export default function MesasFlexiblesAdmin({ ev, cancelled, onChanged, refreshKey = 0 }) {
+export default function MesasFlexiblesAdmin({ ev, cancelled, onChanged, refreshKey = 0, onlyBlocks = false }) {
   const [map, setMap] = useState(null);
   const [tables, setTables] = useState(null);
   const [loadError, setLoadError] = useState("");
@@ -101,7 +101,7 @@ export default function MesasFlexiblesAdmin({ ev, cancelled, onChanged, refreshK
 
   return (
     <div className="space-y-10">
-      <section aria-labelledby="flex-titulo">
+      {!onlyBlocks && <section aria-labelledby="flex-titulo">
         <h3 id="flex-titulo" className="font-display text-3xl font-semibold leading-none">2. Reserva de mesas</h3>
         <p className="mt-1.5 max-w-2xl text-[15px] text-muted">
           Quien compra entradas puede pedir mesa para su grupo: el sistema aparta la mesa libre más ajustada de su sector y, si el grupo no cabe en una, junta mesas vecinas.
@@ -115,10 +115,10 @@ export default function MesasFlexiblesAdmin({ ev, cancelled, onChanged, refreshK
           <button type="button" className="btn btn-quiet !py-2 !text-sm" onClick={saveUntil} disabled={busy || cancelled || until === ev.tableValidUntil || !until}>Guardar</button>
           <p className="field-hint max-w-md">Pasada esa hora el voucher avisa que la mesa se libera para el local; los tickets siguen valiendo.</p>
         </div>
-      </section>
+      </section>}
 
       <section aria-labelledby="bloq-titulo">
-        <h3 id="bloq-titulo" className="font-display text-3xl font-semibold leading-none">3. Mesas que no se ofrecen</h3>
+        <h3 id="bloq-titulo" className="font-display text-3xl font-semibold leading-none">{onlyBlocks ? "Mesas que no se ofrecen" : "3. Mesas que no se ofrecen"}</h3>
         <p className="mt-1.5 max-w-2xl text-[15px] text-muted">
           Saca de la reserva las mesas que no deben darse al público en este evento, por ejemplo la del grupo que se presenta. Toca una mesa o arrastra un recuadro para elegir varias.
         </p>

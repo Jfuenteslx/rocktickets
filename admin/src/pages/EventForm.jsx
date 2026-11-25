@@ -136,13 +136,13 @@ export default function EventForm() {
         }
       }
 
-      navigate(editing ? `/eventos/${id}/detalles` : `/eventos/${savedId}`, {
+      navigate(editing ? `/eventos/${id}/detalles` : `/eventos/${savedId}/configurar`, {
         state: {
           notice: {
             title: editing ? "Cambios guardados" : "Evento creado",
             detail: warnings[0]?.message
               ? `Aviso: ${warnings[0].message}`
-              : editing ? undefined : "Siguiente paso: genera los tickets y crea tus tiers.",
+              : editing ? undefined : "Siguiente paso: elige el tipo de entradas y pon los precios.",
           },
         },
       });

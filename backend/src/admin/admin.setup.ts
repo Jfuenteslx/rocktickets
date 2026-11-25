@@ -267,6 +267,14 @@ async function hashPasswordInPayload(request: any) {
   return request;
 }
 
+// Secreto de sesión del panel: en producción debe ser propio (ADMIN_SESSION_SECRET), no el de la API.
+function sessionSecret(): string {
+  const own = process.env.ADMIN_SESSION_SECRET;
+  if (own) return own;
+  if (process.env.NODE_ENV === 'production') throw new Error('AdminJS en producción requiere ADMIN_SESSION_SECRET');
+  return process.env.JWT_SECRET!;
+}
+
 export async function setupAdmin(app: INestApplication) {
   const sqlDb = await new Adapter('postgresql', {
     connectionString: process.env.DATABASE_URL!,
@@ -450,7 +458,7 @@ export async function setupAdmin(app: INestApplication) {
   const router = AdminJSExpress.buildAuthenticatedRouter(
     admin,
     {
-      cookiePassword: process.env.JWT_SECRET!, // reusamos el secreto existente, no inventamos uno nuevo
+      cookiePassword: sessionSecret(),
       cookieName: 'rocktickets-admin',
       authenticate: async (email: string, password: string) => {
         const [foundUser] = await db.select().from(user).where(eq(user.email, email)).limit(1);
@@ -460,7 +468,12 @@ export async function setupAdmin(app: INestApplication) {
       },
     },
     null,
-    { resave: false, saveUninitialized: false, secret: process.env.JWT_SECRET! },
+    {
+      resave: false,
+      saveUninitialized: false,
+      secret: sessionSecret(),
+      cookie: { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production' ? 'auto' : false },
+    },
   );
 
   const httpAdapter = app.getHttpAdapter().getInstance();

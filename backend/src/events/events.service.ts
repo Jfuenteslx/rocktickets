@@ -36,6 +36,7 @@ import type { IssueCourtesyDto } from './dto/issue-courtesy.dto.js';
 import type { SeatingModeDto } from './dto/seating-mode.dto.js';
 import type { AssignSeatsDto } from './dto/assign-seats.dto.js';
 import type { TablePackageDto, AssignTablePackageDto } from './dto/table-package.dto.js';
+import { applySetup, getSetupState, type SetupInput } from './setup.js';
 import { flexAvailability, listFlexTables, setTableBlocks } from './mesas-flex.js';
 import { MAX_TABLES_PER_ORDER, assignPackageToTables, createPackage, deletePackage, listPackages, setTableValidUntil, updatePackage } from './mesas.js';
 import { AuditLogService } from '../audit/audit-log.service.js';
@@ -82,7 +83,7 @@ export class EventsService {
   async getSeatMap(eventId: string) {
     const [ev] = await this.db.select().from(event).where(eq(event.id, eventId)).limit(1);
     if (!ev) throw new NotFoundException('Evento no encontrado');
-    if (ev.seatingMode !== 'BUTACAS' && ev.seatingMode !== 'MESAS_FIJAS') {
+    if (ev.seatingMode !== 'BUTACAS' && ev.seatingMode !== 'MESAS_FIJAS' && ev.seatingMode !== 'MESAS_FLEXIBLES') {
       throw new BadRequestException('Este evento no vende por asiento ni por mesa');
     }
 
@@ -189,6 +190,7 @@ export class EventsService {
           .map((e) => ({ id: e.id, kind: e.kind, name: e.name, x: e.x, y: e.y, w: e.w, h: e.h })),
       })),
       tables: tables.map((t) => ({ id: t.id, sectorId: t.sectorId, label: t.label, x: t.x, y: t.y })),
+      ...(ev.seatingMode === 'MESAS_FLEXIBLES' ? { validUntil: ev.tableValidUntil } : {}),
       // Mesas fijas: cada mesa se vende completa con su paquete (precio total, personas, botellas)
       ...(ev.seatingMode === 'MESAS_FIJAS' ? { validUntil: ev.tableValidUntil, maxTablesPerOrder: MAX_TABLES_PER_ORDER, mesas: await this.buildMesas(ev.id, tables, seats) } : {}),
       tiers: tiers
@@ -756,6 +758,18 @@ export class EventsService {
   // Público: ¿hay mesa para N personas en este sector? (no dice cuál)
   tableAvailability(eventId: string, sectorId: string, people: number) {
     return flexAvailability(this.db, eventId, sectorId, people);
+  }
+
+  async getSetup(eventId: string, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    return getSetupState(this.db, eventId);
+  }
+
+  async applySetup(eventId: string, input: SetupInput, actor: AuthUser) {
+    await this.getManagedEvent(eventId, actor);
+    const res = await applySetup(this.db, eventId, input);
+    await this.auditLog.log(actor.sub, 'EVENT_SETUP_APPLIED', 'Event', eventId, { seatingMode: input.seatingMode });
+    return res;
   }
 
   async flexTables(eventId: string, actor: AuthUser) {

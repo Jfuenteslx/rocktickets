@@ -17,14 +17,15 @@ import { CreateOrderDto } from './dto/create-order.dto.js';
 import { RecoverOrdersDto } from './dto/recover-orders.dto.js';
 import { OrderMailService } from '../mail/order-mail.service.js';
 import { BuyerAuthService } from '../buyers/buyer-auth.service.js';
-import { CheckoutService } from '../payments/checkout.service.js';
+import { ManualPaymentService } from '../payments/manual-payment.service.js';
+import { DeclarePaymentDto } from '../payments/dto/manual-payment.dto.js';
 
 @Controller('orders')
 export class OrdersController {
   constructor(
     private readonly ordersService: OrdersService,
     private readonly deliveryService: TicketDeliveryService,
-    private readonly checkout: CheckoutService,
+    private readonly manualPayments: ManualPaymentService,
     private readonly orderMail: OrderMailService,
     private readonly buyerAuth: BuyerAuthService,
   ) {}
@@ -59,21 +60,28 @@ export class OrdersController {
     return this.ordersService.getOrderByToken(accessToken);
   }
 
-  // QR de pago vigente de la orden (PNG). Solo existe mientras haya un cobro PENDIENTE.
+  // QR de cobro del negocio (PNG). Solo mientras la compra espera el pago.
   @Get('token/:accessToken/payment/qr.png')
   @Throttle({ default: { limit: 60, ttl: 60_000 } })
   @Header('Cache-Control', 'no-store')
   async paymentQr(@Param('accessToken', ParseUUIDPipe) accessToken: string) {
-    const png = await this.checkout.qrPng(accessToken);
+    const png = await this.manualPayments.qrPng(accessToken);
     return new StreamableFile(png, { type: 'image/png', disposition: 'inline' });
   }
 
-  // Cobro nuevo para la misma orden cuando el QR venció (o no se pudo generar).
+  // "Ya pagué": el comprador deja sus datos y avisa su pago; queda en revisión del superadmin.
   // Devuelve la orden actualizada, igual que GET token/:accessToken.
-  @Post('token/:accessToken/payment/regenerate')
+  @Post('token/:accessToken/payment/declare')
+  @HttpCode(200)
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
-  async regeneratePayment(@Param('accessToken', ParseUUIDPipe) accessToken: string) {
-    await this.checkout.regenerate(accessToken);
+  async declarePayment(
+    @Param('accessToken', ParseUUIDPipe) accessToken: string,
+    @Body() dto: DeclarePaymentDto,
+    @Headers('authorization') authorization?: string,
+  ) {
+    // Si el comprador inició sesión con Google, la compra queda en su cuenta ("Mis compras")
+    const buyer = await this.buyerAuth.fromAuthHeader(authorization);
+    await this.manualPayments.declare(accessToken, dto, buyer?.id ?? null);
     return this.ordersService.getOrderByToken(accessToken);
   }
 

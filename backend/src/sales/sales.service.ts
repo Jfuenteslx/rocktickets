@@ -205,14 +205,27 @@ export class SalesService {
 
   // ---------- Órdenes ----------
 
-  private orderWhere(eventId: string, f: OrderFilters): SQL {
+  // Los datos de contacto de quien aún no pagó (o está en verificación) los ve solo el superadmin
+  private canSeeAllBuyers(actor: AuthUser) {
+    return actor.role === 'SUPERADMIN';
+  }
+
+  private maskBuyer<T extends { status: string; buyerName: string; buyerEmail: string; buyerPhone: string }>(r: T, actor: AuthUser): T {
+    if (this.canSeeAllBuyers(actor) || r.status === 'PAGADA') return r;
+    return { ...r, buyerName: '', buyerEmail: '', buyerPhone: '' };
+  }
+
+  private orderWhere(eventId: string, f: OrderFilters, actor: AuthUser): SQL {
     const parts: SQL[] = [eq(order.eventId, eventId)];
     if (f.status) parts.push(eq(order.status, f.status));
     const term = f.q?.trim();
     if (term && term.length >= 2) {
       const like = `%${fold(term).replace(/[\\%_]/g, (c) => `\\${c}`)}%`;
+      const byBuyer = sql`(${foldedCol(order.buyerName)} like ${like} or ${foldedCol(order.buyerEmail)} like ${like} or ${order.buyerPhone} like ${like})`;
       parts.push(
-        sql`(${foldedCol(order.buyerName)} like ${like} or ${foldedCol(order.buyerEmail)} like ${like} or ${order.buyerPhone} like ${like} or ${order.id}::text like ${like})`,
+        this.canSeeAllBuyers(actor)
+          ? sql`(${byBuyer} or ${order.id}::text like ${like})`
+          : sql`((${byBuyer} and ${order.status} = 'PAGADA') or ${order.id}::text like ${like})`,
       );
     }
     return and(...parts) as SQL;
@@ -247,12 +260,12 @@ export class SalesService {
 
   async listOrders(eventId: string, actor: AuthUser, f: OrderFilters & { limit: number; offset: number }) {
     await this.managedEvent(eventId, actor);
-    const where = this.orderWhere(eventId, f);
+    const where = this.orderWhere(eventId, f, actor);
     const [{ n }] = await this.db.select({ n: sql<number>`count(*)::int` }).from(order).where(where);
     const rows = await this.orderRows(where).limit(f.limit).offset(f.offset);
     return {
       total: n,
-      orders: rows.map((r) => ({ ...r, ref: this.ref(r.id), total: money(r.total) })),
+      orders: rows.map((r) => ({ ...this.maskBuyer(r, actor), ref: this.ref(r.id), total: money(r.total) })),
     };
   }
 
@@ -288,7 +301,7 @@ export class SalesService {
       .orderBy(desc(payment.createdAt));
 
     return {
-      ...o,
+      ...this.maskBuyer(o, actor),
       ref: this.ref(o.id),
       total: money(o.total),
       expiresAt: ex?.expiresAt ?? null,
@@ -305,7 +318,7 @@ export class SalesService {
 
   async exportCsv(eventId: string, actor: AuthUser, f: OrderFilters) {
     const ev = await this.managedEvent(eventId, actor);
-    const rows = await this.orderRows(this.orderWhere(eventId, f)).limit(20000);
+    const rows = (await this.orderRows(this.orderWhere(eventId, f, actor)).limit(20000)).map((r) => this.maskBuyer(r, actor));
 
     // Los nombres los escribe el comprador: una celda que empiece con = + - @ sería una fórmula en Excel
     const cell = (v: unknown) => {

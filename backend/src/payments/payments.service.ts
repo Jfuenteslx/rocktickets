@@ -3,8 +3,18 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { DRIZZLE } from '../db/database.module.js';
 import type { Database } from '../db/client.js';
 import { payment, order, orderItem, ticket } from '../db/index.js';
+import type { paymentStatusEnum } from '../db/schema/enums.js';
 import { RealtimeGateway } from '../realtime/realtime.gateway.js';
 import { OrderMailService } from '../mail/order-mail.service.js';
+
+type PaymentStatus = (typeof paymentStatusEnum.enumValues)[number];
+
+export interface ConfirmOptions {
+  // Estados desde los que se acepta confirmar (por defecto, el cobro automático: PENDIENTE o EXPIRADO)
+  from?: PaymentStatus[];
+  // Superadmin que aprobó el pago manual
+  reviewedBy?: string;
+}
 
 export type ConfirmPaymentResult =
   | { outcome: 'CONFIRMADO'; ticketsCreated: number }
@@ -31,7 +41,8 @@ export class PaymentsService {
   // de Tickets, todo en una única transacción. Nunca uno sin el otro.
   //
   // La llama PagosYaWebhookService cuando llega un aviso de pago firmado y con el monto correcto.
-  async confirmPayment(paymentId: string): Promise<ConfirmPaymentResult> {
+  async confirmPayment(paymentId: string, opts: ConfirmOptions = {}): Promise<ConfirmPaymentResult> {
+    const from = opts.from ?? ['PENDIENTE', 'EXPIRADO'];
     const result = await this.db.transaction<TransactionResult>(async (tx) => {
       const [paymentRow] = await tx
         .select()
@@ -43,7 +54,7 @@ export class PaymentsService {
       if (!paymentRow) throw new NotFoundException('Payment no encontrado');
       // EXPIRADO también cuenta: el QR pudo vencer justo mientras el banco cobraba. Si la orden
       // sigue vigente se confirma; si no, el bloque de abajo lo manda a revisión.
-      if (paymentRow.status !== 'PENDIENTE' && paymentRow.status !== 'EXPIRADO') {
+      if (!from.includes(paymentRow.status)) {
         throw new ConflictException(`Payment ya está en estado ${paymentRow.status}`);
       }
 
@@ -64,7 +75,7 @@ export class PaymentsService {
       if (!orderStillEligible) {
         await tx
           .update(payment)
-          .set({ status: 'CONFIRMADO_SIN_ORDEN' })
+          .set({ status: 'CONFIRMADO_SIN_ORDEN', ...(opts.reviewedBy && { reviewedBy: opts.reviewedBy, reviewedAt: new Date() }) })
           .where(eq(payment.id, paymentId));
 
         return {
@@ -73,7 +84,10 @@ export class PaymentsService {
         };
       }
 
-      await tx.update(payment).set({ status: 'CONFIRMADO' }).where(eq(payment.id, paymentId));
+      await tx
+        .update(payment)
+        .set({ status: 'CONFIRMADO', ...(opts.reviewedBy && { reviewedBy: opts.reviewedBy, reviewedAt: new Date() }) })
+        .where(eq(payment.id, paymentId));
       await tx.update(order).set({ status: 'PAGADA' }).where(eq(order.id, orderRow.id));
 
       const items = await tx.select().from(orderItem).where(eq(orderItem.orderId, orderRow.id));

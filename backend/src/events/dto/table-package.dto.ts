@@ -1,3 +1,5 @@
+import { Type } from 'class-transformer';
+import { ValidateNested } from 'class-validator';
 import { IsBoolean, ArrayMaxSize, ArrayMinSize, IsArray, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, Max, MaxLength, Min } from 'class-validator';
 
 export class TablePackageDto {
@@ -57,4 +59,60 @@ export class TableBlocksDto {
 
   @IsBoolean()
   blocked!: boolean;
+}
+
+export class SetupSectorDto {
+  @IsUUID()
+  sectorId!: string;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0)
+  price!: number;
+
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  quantity?: number;
+}
+
+export class SetupTablePriceDto {
+  @IsInt()
+  @Min(1)
+  @Max(30)
+  people!: number;
+
+  @IsNumber({ maxDecimalPlaces: 2 })
+  @Min(0.01)
+  price!: number;
+}
+
+export class SetupDto {
+  @IsString()
+  @Matches(/^(NINGUNO|BUTACAS|MESAS_FIJAS|MESAS_FLEXIBLES)$/)
+  seatingMode!: 'NINGUNO' | 'BUTACAS' | 'MESAS_FIJAS' | 'MESAS_FLEXIBLES';
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @ValidateNested({ each: true })
+  @Type(() => SetupSectorDto)
+  sectors?: SetupSectorDto[];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(30)
+  @ValidateNested({ each: true })
+  @Type(() => SetupTablePriceDto)
+  tablePrices?: SetupTablePriceDto[];
+
+  @IsOptional()
+  @IsString()
+  @Matches(/^([01]\d|2[0-3]):[0-5]\d$/)
+  tableValidUntil?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(500)
+  @IsUUID(undefined, { each: true })
+  blockedTableIds?: string[];
 }

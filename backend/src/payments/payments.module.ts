@@ -1,31 +1,19 @@
 import { Module } from '@nestjs/common';
+import { BullModule } from '@nestjs/bullmq';
 import { PaymentsService } from './payments.service.js';
-import { CheckoutService } from './checkout.service.js';
-import { PagosYaWebhookService } from './pagosya-webhook.service.js';
-import { PagosYaWebhookController } from './pagosya-webhook.controller.js';
-import { PagosYaSimController } from './pagosya-sim.controller.js';
-import { PagosYaSimProvider } from './pagosya-sim.provider.js';
-import { PAYMENT_PROVIDER } from './payment-provider.js';
-import { getWebhookSecret } from './pagosya-signature.js';
+import { ManualPaymentService } from './manual-payment.service.js';
+import { ManualPaymentController } from './manual-payment.controller.js';
+import { AuthModule } from '../auth/auth.module.js';
 
-// Elige la pasarela según PAYMENTS_PROVIDER. Por ahora solo existe el simulador de PagosYa.
-function createProvider() {
-  const name = process.env.PAYMENTS_PROVIDER ?? 'pagosya-sim';
-  if (name === 'pagosya-sim') {
-    getWebhookSecret(); // falla al arrancar en producción si falta el secreto
-    return new PagosYaSimProvider();
-  }
-  throw new Error(`PAYMENTS_PROVIDER="${name}" no está soportado todavía`);
-}
-
+// Pagos con verificación manual: el comprador paga con el QR del negocio y avisa; el superadmin
+// aprueba o rechaza desde su bandeja. No hay pasarela ni pagos simulados.
+//
+// Los archivos pagosya-webhook.* y pagosya-signature.* quedan SIN registrar a propósito: son el
+// borrador del aviso automático de pago para cuando el banco entregue su documentación.
 @Module({
-  controllers: [PagosYaWebhookController, PagosYaSimController],
-  providers: [
-    PaymentsService,
-    CheckoutService,
-    PagosYaWebhookService,
-    { provide: PAYMENT_PROVIDER, useFactory: createProvider },
-  ],
-  exports: [PaymentsService, CheckoutService],
+  imports: [AuthModule, BullModule.registerQueue({ name: 'order-expiration' })],
+  controllers: [ManualPaymentController],
+  providers: [PaymentsService, ManualPaymentService],
+  exports: [PaymentsService, ManualPaymentService],
 })
 export class PaymentsModule {}
