@@ -17,7 +17,10 @@
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "package": "com.rocktickets.puerta"
+      "package": "com.rocktickets.puerta",
+      "permissions": [
+        "android.permission.CAMERA"
+      ]
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -32,6 +35,12 @@
         }
       ],
       "expo-secure-store"
-    ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "23cb8be3-1ef4-4dad-af8f-c16afc833395"
+      }
+    },
+    "owner": "jfuenteslx"
   }
 }
